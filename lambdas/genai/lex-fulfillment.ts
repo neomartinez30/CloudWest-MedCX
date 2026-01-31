@@ -1,21 +1,21 @@
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, QueryCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
-import { PinpointClient, SendMessagesCommand } from '@aws-sdk/client-pinpoint';
+import { DynamoDBDocumentClient, GetCommand, QueryCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import { randomUUID } from 'crypto';
 
 const lambdaClient = new LambdaClient({});
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
-const pinpointClient = new PinpointClient({});
+const bedrockClient = new BedrockRuntimeClient({});
 
 const PATIENT_TABLE = process.env.PATIENT_TABLE!;
 const CONVERSATION_TABLE = process.env.CONVERSATION_TABLE!;
 const APPOINTMENT_TABLE = process.env.APPOINTMENT_TABLE!;
-const PINPOINT_APP_ID = process.env.PINPOINT_APP_ID!;
 const APPOINTMENT_SCHEDULER_ARN = process.env.APPOINTMENT_SCHEDULER_ARN!;
-const BEDROCK_FUNCTION_ARN = process.env.BEDROCK_FUNCTION_ARN!;
 const IDENTITY_RESOLVER_ARN = process.env.IDENTITY_RESOLVER_ARN!;
+const CHANNEL_ROUTER_ARN = process.env.CHANNEL_ROUTER_ARN!;
+const MODEL_ID = process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-sonnet-20240229-v1:0';
 
 interface LexEvent {
   sessionState: {
@@ -26,405 +26,418 @@ interface LexEvent {
       state: string;
       confirmationState?: string;
     };
-    dialogAction?: {
-      type: string;
-    };
   };
   invocationSource: string;
   inputTranscript: string;
-  interpretations: any[];
   requestAttributes?: Record<string, string>;
-  bot: {
-    id: string;
-    name: string;
-    aliasId: string;
-    aliasName: string;
-    localeId: string;
-    version: string;
-  };
   sessionId: string;
 }
 
+interface ConversationContext {
+  patientId?: string;
+  patientName?: string;
+  phoneNumber?: string;
+  conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>;
+  currentIntent?: string;
+  pendingAction?: any;
+  appointments?: any[];
+}
+
+const SYSTEM_PROMPT = `You are a friendly, helpful medical office assistant for CloudWest Medical Center. Your role is to help patients with:
+
+1. **Scheduling appointments** - Help patients book new appointments
+2. **Checking appointments** - Look up their upcoming appointments
+3. **Cancelling/rescheduling** - Modify existing appointments
+4. **Payments** - Check balance or help with payments
+5. **Prescription refills** - Request medication refills
+6. **General questions** - Office hours, location, etc.
+
+## Important Guidelines:
+
+- Be warm, conversational, and empathetic - patients may be anxious about health matters
+- Keep responses concise for voice (2-3 sentences max unless listing information)
+- Always confirm understanding before taking actions
+- If you need information (like date/time for scheduling), ask naturally in conversation
+- Offer to send details via text message when appropriate
+- If you cannot help with something, offer to connect them with a human agent
+
+## Available Actions (output these as JSON when needed):
+
+When the patient confirms they want to take an action, respond with your message AND include a JSON action block:
+
+\`\`\`action
+{"action": "schedule_appointment", "appointmentType": "...", "date": "...", "time": "..."}
+\`\`\`
+
+\`\`\`action
+{"action": "cancel_appointment", "appointmentId": "..."}
+\`\`\`
+
+\`\`\`action
+{"action": "send_sms", "message": "...", "includeTimePicker": true}
+\`\`\`
+
+\`\`\`action
+{"action": "transfer_to_agent", "reason": "..."}
+\`\`\`
+
+\`\`\`action
+{"action": "check_appointments"}
+\`\`\`
+
+## Patient Context:
+{PATIENT_CONTEXT}
+
+## Current Date/Time: {CURRENT_DATETIME}
+
+Remember: You're speaking to them on the phone, so be natural and conversational. Don't be robotic!`;
+
 /**
- * Lex Fulfillment Lambda
+ * Conversational Lex Fulfillment Lambda
  *
- * Handles Lex bot fulfillment for the appointment scheduling bot.
- * Integrates with Bedrock for natural language understanding and
- * supports interactive messaging for rich channel experiences.
+ * Uses Amazon Bedrock Claude for natural, GenAI-powered conversations.
+ * Maintains context across turns and handles multi-turn dialogs naturally.
  */
 export const handler = async (event: LexEvent): Promise<any> => {
-  console.log('Lex Fulfillment Event:', JSON.stringify(event, null, 2));
+  console.log('Conversational Lex Event:', JSON.stringify(event, null, 2));
 
   try {
-    const intentName = event.sessionState.intent.name;
-    const slots = event.sessionState.intent.slots;
+    const userMessage = event.inputTranscript;
     const sessionAttributes = event.sessionState.sessionAttributes || {};
-    const invocationSource = event.invocationSource;
 
-    // Get or resolve patient identity
-    let patientId = sessionAttributes.patientId;
-    if (!patientId) {
-      const phoneNumber = sessionAttributes.phoneNumber || event.requestAttributes?.['x-amz-lex:caller-id'];
-      if (phoneNumber) {
-        const identity = await resolvePatientIdentity(phoneNumber);
-        if (identity) {
-          patientId = identity.patientId;
-          sessionAttributes.patientId = patientId;
-          sessionAttributes.patientName = `${identity.firstName || ''} ${identity.lastName || ''}`.trim();
-        }
+    // Build or restore conversation context
+    const context = await buildContext(sessionAttributes, event.requestAttributes);
+
+    // Add user message to history
+    context.conversationHistory.push({ role: 'user', content: userMessage });
+
+    // Generate response using Bedrock Claude
+    const { response, action } = await generateConversationalResponse(context, userMessage);
+
+    // Add assistant response to history
+    context.conversationHistory.push({ role: 'assistant', content: response });
+
+    // Execute any actions
+    let finalResponse = response;
+    if (action) {
+      const actionResult = await executeAction(action, context);
+      if (actionResult.additionalMessage) {
+        finalResponse = actionResult.additionalMessage;
+      }
+      if (actionResult.transferToAgent) {
+        return buildTransferResponse(event, context, finalResponse);
       }
     }
 
-    // Route to appropriate handler
-    switch (intentName) {
-      case 'ScheduleAppointment':
-        return handleScheduleAppointment(event, slots, sessionAttributes, invocationSource);
+    // Save updated context
+    await saveContext(context, sessionAttributes);
 
-      case 'CheckAppointments':
-        return handleCheckAppointments(event, sessionAttributes);
+    // Check if we should continue the conversation
+    const shouldContinue = !action || action.action !== 'transfer_to_agent';
 
-      case 'CancelAppointment':
-        return handleCancelAppointment(event, slots, sessionAttributes);
+    return buildConversationalResponse(event, context, finalResponse, shouldContinue);
 
-      case 'RescheduleAppointment':
-        return handleRescheduleAppointment(event, slots, sessionAttributes);
-
-      case 'SendTimesViaSMS':
-        return handleSendTimesViaSMS(event, sessionAttributes);
-
-      case 'Help':
-        return handleHelp(event, sessionAttributes);
-
-      case 'FallbackIntent':
-        return handleFallback(event, sessionAttributes);
-
-      default:
-        return buildResponse(event, 'Close', 'Fulfilled',
-          "I'm not sure how to help with that. Would you like to schedule an appointment or speak with an agent?");
-    }
   } catch (error) {
-    console.error('Error in Lex fulfillment:', error);
-    return buildResponse(event, 'Close', 'Failed',
-      "I'm sorry, I encountered an error. Let me connect you with an agent who can help.");
+    console.error('Error in conversational fulfillment:', error);
+    return buildErrorResponse(event,
+      "I apologize, I'm having a little trouble right now. Would you like me to connect you with one of our team members?");
   }
 };
 
 /**
- * Handle Schedule Appointment intent
+ * Build conversation context from session attributes
  */
-async function handleScheduleAppointment(
-  event: LexEvent,
-  slots: Record<string, any>,
+async function buildContext(
   sessionAttributes: Record<string, string>,
-  invocationSource: string
-): Promise<any> {
-  const appointmentType = getSlotValue(slots.AppointmentType);
-  const appointmentDate = getSlotValue(slots.AppointmentDate);
-  const appointmentTime = getSlotValue(slots.AppointmentTime);
+  requestAttributes?: Record<string, string>
+): Promise<ConversationContext> {
+  let context: ConversationContext = {
+    conversationHistory: [],
+  };
 
-  // If dialog code hook, validate slots
-  if (invocationSource === 'DialogCodeHook') {
-    // Check if all required slots are filled
-    if (!appointmentType) {
-      return buildElicitSlotResponse(event, 'AppointmentType',
-        "What type of appointment do you need? For example: general checkup, follow-up, or urgent care.");
+  // Restore existing conversation history
+  if (sessionAttributes.conversationHistory) {
+    try {
+      context.conversationHistory = JSON.parse(sessionAttributes.conversationHistory);
+    } catch (e) {
+      context.conversationHistory = [];
     }
-
-    if (!appointmentDate) {
-      return buildElicitSlotResponse(event, 'AppointmentDate',
-        "What date works best for you? I can also send you available times via text message.");
-    }
-
-    if (!appointmentTime) {
-      // Offer to send times via SMS
-      const message = `I have several times available on ${appointmentDate}. Would you like me to text you the available slots so you can choose easily?`;
-      return buildConfirmIntentResponse(event, message, sessionAttributes);
-    }
-
-    // All slots filled, proceed to confirmation
-    return buildConfirmIntentResponse(event,
-      `Perfect! I have you down for a ${appointmentType} appointment on ${appointmentDate} at ${appointmentTime}. Shall I confirm this?`,
-      sessionAttributes);
   }
 
-  // Fulfillment - actually book the appointment
-  if (!sessionAttributes.patientId) {
-    return buildResponse(event, 'Close', 'Failed',
-      "I couldn't find your patient record. Please provide your phone number or contact us directly.");
+  // Resolve patient identity
+  const phoneNumber = sessionAttributes.phoneNumber ||
+                       requestAttributes?.['x-amz-lex:caller-id'] ||
+                       requestAttributes?.['phoneNumber'];
+
+  if (phoneNumber) {
+    context.phoneNumber = phoneNumber;
+
+    if (!sessionAttributes.patientId) {
+      const identity = await resolvePatientIdentity(phoneNumber);
+      if (identity?.patientId) {
+        context.patientId = identity.patientId;
+        context.patientName = `${identity.firstName || ''} ${identity.lastName || ''}`.trim();
+
+        // Fetch upcoming appointments
+        context.appointments = await getUpcomingAppointments(identity.patientId);
+      }
+    } else {
+      context.patientId = sessionAttributes.patientId;
+      context.patientName = sessionAttributes.patientName;
+
+      if (!sessionAttributes.appointments) {
+        context.appointments = await getUpcomingAppointments(sessionAttributes.patientId);
+      } else {
+        try {
+          context.appointments = JSON.parse(sessionAttributes.appointments);
+        } catch (e) {
+          context.appointments = [];
+        }
+      }
+    }
   }
 
-  // Check confirmation
-  if (event.sessionState.intent.confirmationState === 'Denied') {
-    return buildResponse(event, 'Close', 'Failed',
-      "No problem! Let me know when you'd like to reschedule.");
+  return context;
+}
+
+/**
+ * Generate conversational response using Bedrock Claude
+ */
+async function generateConversationalResponse(
+  context: ConversationContext,
+  userMessage: string
+): Promise<{ response: string; action?: any }> {
+
+  // Build patient context for system prompt
+  let patientContext = '';
+  if (context.patientName) {
+    patientContext += `Patient Name: ${context.patientName}\n`;
   }
-
-  // Book the appointment
-  const bookingResult = await invokeFunction(APPOINTMENT_SCHEDULER_ARN, {
-    action: 'bookAppointment',
-    patientId: sessionAttributes.patientId,
-    appointmentType,
-    preferredDate: appointmentDate,
-    preferredTime: appointmentTime,
-    sendCalendarInvite: true,
-  });
-
-  if (bookingResult.success) {
-    const confirmationMessage = `Your ${appointmentType} appointment is confirmed for ${appointmentDate} at ${appointmentTime}. ` +
-      `I've sent a calendar invitation to your email. Is there anything else I can help you with?`;
-
-    // Store the appointment in conversation context
-    await recordConversation(sessionAttributes.patientId, 'outbound', confirmationMessage, 'appointment_confirmation');
-
-    return buildResponse(event, 'Close', 'Fulfilled', confirmationMessage);
+  if (context.patientId) {
+    patientContext += `Patient ID: ${context.patientId}\n`;
+  }
+  if (context.appointments && context.appointments.length > 0) {
+    patientContext += `\nUpcoming Appointments:\n`;
+    context.appointments.forEach((apt, i) => {
+      patientContext += `${i + 1}. ${apt.appointmentType || 'Appointment'} on ${apt.appointmentDate} at ${apt.appointmentTime}\n`;
+    });
   } else {
-    return buildResponse(event, 'Close', 'Failed',
-      "I couldn't complete the booking. That time slot may no longer be available. Would you like to try a different time?");
-  }
-}
-
-/**
- * Handle Check Appointments intent
- */
-async function handleCheckAppointments(
-  event: LexEvent,
-  sessionAttributes: Record<string, string>
-): Promise<any> {
-  if (!sessionAttributes.patientId) {
-    return buildResponse(event, 'Close', 'Failed',
-      "I couldn't find your patient record. Please provide your phone number so I can look up your appointments.");
+    patientContext += `\nNo upcoming appointments on file.\n`;
   }
 
-  const appointments = await getUpcomingAppointments(sessionAttributes.patientId);
+  const systemPrompt = SYSTEM_PROMPT
+    .replace('{PATIENT_CONTEXT}', patientContext || 'New patient - no records found yet')
+    .replace('{CURRENT_DATETIME}', new Date().toLocaleString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
+    }));
 
-  if (appointments.length === 0) {
-    return buildResponse(event, 'Close', 'Fulfilled',
-      "You don't have any upcoming appointments. Would you like to schedule one?");
-  }
+  // Build messages for Bedrock
+  const messages = context.conversationHistory.map(msg => ({
+    role: msg.role as 'user' | 'assistant',
+    content: [{ text: msg.content }],
+  }));
 
-  let message = "Here are your upcoming appointments:\n";
-  appointments.slice(0, 3).forEach((apt, index) => {
-    message += `${index + 1}. ${apt.appointmentType} on ${apt.appointmentDate} at ${apt.appointmentTime}\n`;
-  });
-
-  if (appointments.length > 3) {
-    message += `And ${appointments.length - 3} more. `;
-  }
-
-  message += "\nWould you like to reschedule or cancel any of these?";
-
-  return buildResponse(event, 'Close', 'Fulfilled', message);
-}
-
-/**
- * Handle Cancel Appointment intent
- */
-async function handleCancelAppointment(
-  event: LexEvent,
-  slots: Record<string, any>,
-  sessionAttributes: Record<string, string>
-): Promise<any> {
-  if (!sessionAttributes.patientId) {
-    return buildResponse(event, 'Close', 'Failed',
-      "I couldn't find your patient record. Please provide your phone number.");
-  }
-
-  const appointmentDate = getSlotValue(slots.AppointmentDate);
-
-  // Find appointments on the given date
-  const appointments = await getUpcomingAppointments(sessionAttributes.patientId);
-  const matchingAppointments = appointmentDate
-    ? appointments.filter(a => a.appointmentDate === appointmentDate)
-    : appointments;
-
-  if (matchingAppointments.length === 0) {
-    return buildResponse(event, 'Close', 'Failed',
-      "I couldn't find any appointments to cancel. Would you like to check your appointments?");
-  }
-
-  if (matchingAppointments.length === 1) {
-    // Cancel the only matching appointment
-    const apt = matchingAppointments[0];
-    const result = await invokeFunction(APPOINTMENT_SCHEDULER_ARN, {
-      action: 'cancel',
-      appointmentId: apt.appointmentId,
+  try {
+    const command = new ConverseCommand({
+      modelId: MODEL_ID,
+      system: [{ text: systemPrompt }],
+      messages,
+      inferenceConfig: {
+        maxTokens: 500,
+        temperature: 0.7,
+        topP: 0.9,
+      },
     });
 
-    if (result.success) {
-      return buildResponse(event, 'Close', 'Fulfilled',
-        `I've cancelled your ${apt.appointmentType} appointment on ${apt.appointmentDate}. Would you like to reschedule?`);
+    const bedrockResponse = await bedrockClient.send(command);
+    const responseText = bedrockResponse.output?.message?.content?.[0]?.text || '';
+
+    // Parse any action from the response
+    const action = parseAction(responseText);
+    const cleanResponse = removeActionBlock(responseText);
+
+    return { response: cleanResponse, action };
+
+  } catch (error) {
+    console.error('Bedrock error:', error);
+    return {
+      response: "I'd be happy to help you. Could you tell me what you'd like to do today? " +
+                "I can help with scheduling, checking appointments, or connecting you with our team."
+    };
+  }
+}
+
+/**
+ * Parse action JSON from response
+ */
+function parseAction(response: string): any | null {
+  const actionMatch = response.match(/```action\n([\s\S]*?)\n```/);
+  if (actionMatch) {
+    try {
+      return JSON.parse(actionMatch[1]);
+    } catch (e) {
+      console.error('Failed to parse action:', e);
     }
   }
-
-  // Multiple appointments - ask for clarification
-  let message = "Which appointment would you like to cancel?\n";
-  matchingAppointments.forEach((apt, index) => {
-    message += `${index + 1}. ${apt.appointmentType} on ${apt.appointmentDate} at ${apt.appointmentTime}\n`;
-  });
-
-  return buildElicitSlotResponse(event, 'AppointmentDate', message);
+  return null;
 }
 
 /**
- * Handle Reschedule Appointment intent
+ * Remove action block from response
  */
-async function handleRescheduleAppointment(
-  event: LexEvent,
-  slots: Record<string, any>,
-  sessionAttributes: Record<string, string>
-): Promise<any> {
-  const newDate = getSlotValue(slots.NewDate);
-  const newTime = getSlotValue(slots.NewTime);
-
-  if (!sessionAttributes.patientId) {
-    return buildResponse(event, 'Close', 'Failed',
-      "I couldn't find your patient record. Please provide your phone number.");
-  }
-
-  if (!newDate || !newTime) {
-    return buildElicitSlotResponse(event, newDate ? 'NewTime' : 'NewDate',
-      "When would you like to reschedule to?");
-  }
-
-  // Get the most recent appointment to reschedule
-  const appointments = await getUpcomingAppointments(sessionAttributes.patientId);
-  if (appointments.length === 0) {
-    return buildResponse(event, 'Close', 'Failed',
-      "You don't have any appointments to reschedule.");
-  }
-
-  const result = await invokeFunction(APPOINTMENT_SCHEDULER_ARN, {
-    action: 'reschedule',
-    appointmentId: appointments[0].appointmentId,
-    preferredDate: newDate,
-    preferredTime: newTime,
-  });
-
-  if (result.success) {
-    return buildResponse(event, 'Close', 'Fulfilled',
-      `Done! Your appointment has been rescheduled to ${newDate} at ${newTime}. I've updated your calendar invitation.`);
-  }
-
-  return buildResponse(event, 'Close', 'Failed',
-    "I couldn't reschedule to that time. Would you like to try a different time?");
+function removeActionBlock(response: string): string {
+  return response.replace(/```action\n[\s\S]*?\n```/g, '').trim();
 }
 
 /**
- * Handle Send Times via SMS
+ * Execute parsed action
  */
-async function handleSendTimesViaSMS(
-  event: LexEvent,
-  sessionAttributes: Record<string, string>
-): Promise<any> {
-  if (!sessionAttributes.patientId) {
-    return buildResponse(event, 'Close', 'Failed',
-      "I couldn't find your phone number to send the times.");
+async function executeAction(
+  action: any,
+  context: ConversationContext
+): Promise<{ success: boolean; additionalMessage?: string; transferToAgent?: boolean }> {
+
+  console.log('Executing action:', action);
+
+  switch (action.action) {
+    case 'schedule_appointment':
+      if (!context.patientId) {
+        return {
+          success: false,
+          additionalMessage: "I'd love to help you schedule, but I need to verify your information first. Can you confirm your phone number?"
+        };
+      }
+
+      const scheduleResult = await invokeFunction(APPOINTMENT_SCHEDULER_ARN, {
+        action: 'scheduleAppointment',
+        patientId: context.patientId,
+        appointmentType: action.appointmentType,
+        preferredDate: action.date,
+        preferredTime: action.time,
+        sendCalendarInvite: true,
+      });
+
+      if (scheduleResult.success) {
+        // Record in conversation history
+        await recordConversation(context.patientId, 'system',
+          `Scheduled ${action.appointmentType} for ${action.date} at ${action.time}`, 'appointment_scheduled');
+        return { success: true };
+      }
+
+      return {
+        success: false,
+        additionalMessage: "Hmm, that time slot isn't available. Would you like me to suggest some alternatives?"
+      };
+
+    case 'cancel_appointment':
+      const cancelResult = await invokeFunction(APPOINTMENT_SCHEDULER_ARN, {
+        action: 'cancelAppointment',
+        appointmentId: action.appointmentId,
+        patientId: context.patientId,
+      });
+
+      return { success: cancelResult.success };
+
+    case 'check_appointments':
+      // Already have appointments in context, no additional action needed
+      return { success: true };
+
+    case 'send_sms':
+      if (context.phoneNumber) {
+        await invokeFunction(CHANNEL_ROUTER_ARN, {
+          action: 'sendOutbound',
+          channel: 'sms',
+          patientId: context.patientId,
+          phoneNumber: context.phoneNumber,
+          content: action.message,
+          includeTimePicker: action.includeTimePicker,
+        });
+        return { success: true };
+      }
+      return { success: false };
+
+    case 'transfer_to_agent':
+      return { success: true, transferToAgent: true };
+
+    default:
+      return { success: false };
   }
-
-  // Get patient phone number
-  const patient = await getPatient(sessionAttributes.patientId);
-  if (!patient || !patient.phoneNumber) {
-    return buildResponse(event, 'Close', 'Failed',
-      "I don't have a phone number on file. Could you provide one?");
-  }
-
-  // Get available slots
-  const slotsResult = await invokeFunction(APPOINTMENT_SCHEDULER_ARN, {
-    action: 'getAvailableSlots',
-    preferredDate: new Date().toISOString().split('T')[0],
-  });
-
-  if (!slotsResult.slots || slotsResult.slots.length === 0) {
-    return buildResponse(event, 'Close', 'Failed',
-      "I couldn't find any available slots. Please try again or speak with an agent.");
-  }
-
-  // Format slots for SMS
-  const topSlots = slotsResult.slots.slice(0, 5);
-  let smsMessage = "Available appointment times:\n";
-  topSlots.forEach((slot: any, index: number) => {
-    const date = new Date(slot.startTime);
-    smsMessage += `${index + 1}. ${date.toLocaleDateString()} at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}\n`;
-  });
-  smsMessage += "\nReply with the number to book, or say 'more' for additional times.";
-
-  // Send SMS
-  await sendSMS(patient.phoneNumber, smsMessage);
-
-  // Store context for follow-up
-  await recordConversation(sessionAttributes.patientId, 'outbound', smsMessage, 'available_times');
-
-  return buildResponse(event, 'Close', 'Fulfilled',
-    "I've sent the available times to your phone. You can reply to that message to book, or continue here. Is there anything else I can help with?");
 }
 
 /**
- * Handle Help intent
+ * Save conversation context to session attributes
  */
-async function handleHelp(
-  event: LexEvent,
+async function saveContext(
+  context: ConversationContext,
   sessionAttributes: Record<string, string>
-): Promise<any> {
-  const helpMessage = `I can help you with:
-- Schedule a new appointment
-- Check your upcoming appointments
-- Cancel or reschedule appointments
-- Send available times to your phone
+): Promise<void> {
+  // Keep last 10 turns to avoid session attribute size limits
+  const recentHistory = context.conversationHistory.slice(-10);
 
-Just tell me what you'd like to do, or say "speak to an agent" if you need additional help.`;
+  sessionAttributes.conversationHistory = JSON.stringify(recentHistory);
+  sessionAttributes.patientId = context.patientId || '';
+  sessionAttributes.patientName = context.patientName || '';
+  sessionAttributes.phoneNumber = context.phoneNumber || '';
 
-  return buildResponse(event, 'Close', 'Fulfilled', helpMessage);
+  if (context.appointments) {
+    sessionAttributes.appointments = JSON.stringify(context.appointments);
+  }
 }
 
 /**
- * Handle Fallback intent using Bedrock
+ * Build conversational Lex response
  */
-async function handleFallback(
+function buildConversationalResponse(
   event: LexEvent,
-  sessionAttributes: Record<string, string>
-): Promise<any> {
-  const userMessage = event.inputTranscript;
-
-  // Use Bedrock for natural language understanding
-  const bedrockResult = await invokeFunction(BEDROCK_FUNCTION_ARN, {
-    action: 'generateResponse',
-    patientId: sessionAttributes.patientId,
-    userMessage,
-    context: sessionAttributes,
-  });
-
-  if (bedrockResult.response) {
-    return buildResponse(event, 'Close', 'Fulfilled', bedrockResult.response);
-  }
-
-  return buildResponse(event, 'Close', 'Fulfilled',
-    "I'm not sure I understood that. Would you like to schedule an appointment, or would you prefer to speak with an agent?");
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-function getSlotValue(slot: any): string | null {
-  if (!slot) return null;
-  return slot.value?.interpretedValue || slot.value?.originalValue || null;
-}
-
-function buildResponse(
-  event: LexEvent,
-  dialogActionType: string,
-  fulfillmentState: string,
-  message: string
+  context: ConversationContext,
+  message: string,
+  shouldContinue: boolean
 ): any {
+  const sessionAttributes = event.sessionState.sessionAttributes || {};
+
+  // Update session attributes
+  sessionAttributes.conversationHistory = JSON.stringify(context.conversationHistory.slice(-10));
+  sessionAttributes.patientId = context.patientId || '';
+  sessionAttributes.patientName = context.patientName || '';
+
+  if (shouldContinue) {
+    // Continue conversation - elicit more input
+    return {
+      sessionState: {
+        sessionAttributes,
+        dialogAction: {
+          type: 'ElicitSlot',
+          slotToElicit: 'UserInput',
+        },
+        intent: {
+          ...event.sessionState.intent,
+          state: 'InProgress',
+        },
+      },
+      messages: [
+        {
+          contentType: 'PlainText',
+          content: message,
+        },
+      ],
+    };
+  }
+
+  // End conversation
   return {
     sessionState: {
-      sessionAttributes: event.sessionState.sessionAttributes,
+      sessionAttributes,
       dialogAction: {
-        type: dialogActionType,
+        type: 'Close',
       },
       intent: {
         ...event.sessionState.intent,
-        state: fulfillmentState,
+        state: 'Fulfilled',
       },
     },
     messages: [
@@ -436,17 +449,52 @@ function buildResponse(
   };
 }
 
-function buildElicitSlotResponse(
+/**
+ * Build transfer to agent response
+ */
+function buildTransferResponse(
   event: LexEvent,
-  slotToElicit: string,
+  context: ConversationContext,
   message: string
 ): any {
+  const sessionAttributes = event.sessionState.sessionAttributes || {};
+  sessionAttributes.transferReason = 'customer_request';
+  sessionAttributes.conversationSummary = JSON.stringify(context.conversationHistory.slice(-5));
+
+  return {
+    sessionState: {
+      sessionAttributes,
+      dialogAction: {
+        type: 'Close',
+      },
+      intent: {
+        ...event.sessionState.intent,
+        state: 'Fulfilled',
+      },
+    },
+    messages: [
+      {
+        contentType: 'PlainText',
+        content: message,
+      },
+    ],
+    // Signal to Connect to transfer
+    requestAttributes: {
+      'x-amz-lex:transfer-to-agent': 'true',
+    },
+  };
+}
+
+/**
+ * Build error response
+ */
+function buildErrorResponse(event: LexEvent, message: string): any {
   return {
     sessionState: {
       sessionAttributes: event.sessionState.sessionAttributes,
       dialogAction: {
         type: 'ElicitSlot',
-        slotToElicit,
+        slotToElicit: 'UserInput',
       },
       intent: event.sessionState.intent,
     },
@@ -459,65 +507,47 @@ function buildElicitSlotResponse(
   };
 }
 
-function buildConfirmIntentResponse(
-  event: LexEvent,
-  message: string,
-  sessionAttributes: Record<string, string>
-): any {
-  return {
-    sessionState: {
-      sessionAttributes,
-      dialogAction: {
-        type: 'ConfirmIntent',
-      },
-      intent: event.sessionState.intent,
-    },
-    messages: [
-      {
-        contentType: 'PlainText',
-        content: message,
-      },
-    ],
-  };
-}
-
+// Helper functions
 async function invokeFunction(functionArn: string, payload: any): Promise<any> {
   const command = new InvokeCommand({
     FunctionName: functionArn,
     Payload: JSON.stringify(payload),
   });
-
   const response = await lambdaClient.send(command);
   return JSON.parse(new TextDecoder().decode(response.Payload));
 }
 
 async function resolvePatientIdentity(phoneNumber: string): Promise<any> {
-  return invokeFunction(IDENTITY_RESOLVER_ARN, {
-    phoneNumber,
-    createIfNotFound: false,
-  });
-}
-
-async function getPatient(patientId: string): Promise<any> {
-  const result = await docClient.send(new GetCommand({
-    TableName: PATIENT_TABLE,
-    Key: { patientId, recordType: 'PROFILE' },
-  }));
-  return result.Item;
+  try {
+    return await invokeFunction(IDENTITY_RESOLVER_ARN, {
+      action: 'resolveByPhone',
+      phoneNumber,
+      createIfNotFound: false,
+    });
+  } catch (error) {
+    console.error('Error resolving identity:', error);
+    return null;
+  }
 }
 
 async function getUpcomingAppointments(patientId: string): Promise<any[]> {
-  const result = await docClient.send(new QueryCommand({
-    TableName: APPOINTMENT_TABLE,
-    IndexName: 'patient-index',
-    KeyConditionExpression: 'patientId = :patientId AND appointmentDateTime >= :now',
-    ExpressionAttributeValues: {
-      ':patientId': patientId,
-      ':now': new Date().toISOString(),
-    },
-    Limit: 10,
-  }));
-  return result.Items || [];
+  try {
+    const result = await docClient.send(new QueryCommand({
+      TableName: APPOINTMENT_TABLE,
+      IndexName: 'patient-index',
+      KeyConditionExpression: 'patientId = :patientId',
+      FilterExpression: 'appointmentDateTime >= :now',
+      ExpressionAttributeValues: {
+        ':patientId': patientId,
+        ':now': new Date().toISOString(),
+      },
+      Limit: 5,
+    }));
+    return result.Items || [];
+  } catch (error) {
+    console.error('Error fetching appointments:', error);
+    return [];
+  }
 }
 
 async function recordConversation(
@@ -526,36 +556,20 @@ async function recordConversation(
   content: string,
   messageType: string
 ): Promise<void> {
-  await docClient.send(new PutCommand({
-    TableName: CONVERSATION_TABLE,
-    Item: {
-      patientId,
-      messageTimestamp: new Date().toISOString(),
-      messageId: randomUUID(),
-      direction,
-      content,
-      messageType,
-      channel: 'voice',
-      createdAt: new Date().toISOString(),
-    },
-  }));
-}
-
-async function sendSMS(phoneNumber: string, message: string): Promise<void> {
-  await pinpointClient.send(new SendMessagesCommand({
-    ApplicationId: PINPOINT_APP_ID,
-    MessageRequest: {
-      Addresses: {
-        [phoneNumber]: {
-          ChannelType: 'SMS',
-        },
+  try {
+    await docClient.send(new PutCommand({
+      TableName: CONVERSATION_TABLE,
+      Item: {
+        patientId,
+        messageTimestamp: new Date().toISOString(),
+        messageId: randomUUID(),
+        direction,
+        content,
+        messageType,
+        channel: 'voice',
       },
-      MessageConfiguration: {
-        SMSMessage: {
-          Body: message,
-          MessageType: 'TRANSACTIONAL',
-        },
-      },
-    },
-  }));
+    }));
+  } catch (error) {
+    console.error('Error recording conversation:', error);
+  }
 }

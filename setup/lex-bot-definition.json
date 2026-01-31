@@ -1,6 +1,6 @@
 {
-  "name": "MedCXSchedulerBot",
-  "description": "Medical appointment scheduling bot for CloudWest MedCX",
+  "name": "MedCXConversationalBot",
+  "description": "GenAI-powered conversational medical assistant using Amazon Bedrock",
   "roleArn": "REPLACE_WITH_LEX_SERVICE_ROLE_ARN",
   "dataPrivacy": {
     "childDirected": false
@@ -9,35 +9,38 @@
   "botLocales": [
     {
       "localeId": "en_US",
-      "nluIntentConfidenceThreshold": 0.4,
+      "nluIntentConfidenceThreshold": 0.3,
       "voiceSettings": {
         "voiceId": "Joanna",
         "engine": "neural"
       },
       "intents": [
         {
-          "name": "ScheduleAppointment",
-          "description": "Schedule a new medical appointment",
+          "name": "ConversationalIntent",
+          "description": "Main conversational intent - delegates all NLU to Bedrock/Claude",
           "sampleUtterances": [
-            {"utterance": "I need to schedule an appointment"},
-            {"utterance": "I want to book an appointment"},
-            {"utterance": "Can I make an appointment"},
-            {"utterance": "Schedule me for a checkup"},
-            {"utterance": "I need to see a doctor"},
-            {"utterance": "Book me an appointment"},
-            {"utterance": "I'd like to schedule a visit"},
-            {"utterance": "Can I get an appointment for {AppointmentType}"},
-            {"utterance": "I need a {AppointmentType} appointment"},
-            {"utterance": "Schedule a {AppointmentType} for {AppointmentDate}"},
-            {"utterance": "I want to see Dr {ProviderName}"},
-            {"utterance": "Book me with Dr {ProviderName}"},
-            {"utterance": "I need an appointment on {AppointmentDate}"},
-            {"utterance": "Can I come in on {AppointmentDate} at {AppointmentTime}"}
+            {"utterance": "I need help"},
+            {"utterance": "hello"},
+            {"utterance": "hi"},
+            {"utterance": "yes"},
+            {"utterance": "no"},
+            {"utterance": "schedule"},
+            {"utterance": "appointment"},
+            {"utterance": "cancel"},
+            {"utterance": "reschedule"},
+            {"utterance": "pay"},
+            {"utterance": "bill"},
+            {"utterance": "refill"},
+            {"utterance": "prescription"},
+            {"utterance": "agent"},
+            {"utterance": "person"},
+            {"utterance": "help"},
+            {"utterance": "{UserInput}"}
           ],
           "slots": [
             {
-              "name": "AppointmentType",
-              "slotTypeName": "AppointmentTypeSlot",
+              "name": "UserInput",
+              "slotTypeName": "AMAZON.FreeFormInput",
               "valueElicitationSetting": {
                 "slotConstraint": "Required",
                 "promptSpecification": {
@@ -45,472 +48,64 @@
                     {
                       "message": {
                         "plainTextMessage": {
-                          "value": "What type of appointment do you need? For example, annual checkup, follow-up visit, sick visit, or specialist consultation."
+                          "value": "How can I help you today?"
                         }
                       }
                     }
                   ],
-                  "maxRetries": 2,
-                  "allowInterrupt": true
-                }
-              }
-            },
-            {
-              "name": "AppointmentDate",
-              "slotTypeName": "AMAZON.Date",
-              "valueElicitationSetting": {
-                "slotConstraint": "Required",
-                "promptSpecification": {
-                  "messageGroups": [
-                    {
-                      "message": {
-                        "plainTextMessage": {
-                          "value": "What date would you like to schedule your appointment?"
-                        }
-                      }
-                    }
-                  ],
-                  "maxRetries": 2,
-                  "allowInterrupt": true
-                }
-              }
-            },
-            {
-              "name": "AppointmentTime",
-              "slotTypeName": "AMAZON.Time",
-              "valueElicitationSetting": {
-                "slotConstraint": "Required",
-                "promptSpecification": {
-                  "messageGroups": [
-                    {
-                      "message": {
-                        "plainTextMessage": {
-                          "value": "What time works best for you? We have morning and afternoon slots available."
-                        }
-                      }
-                    }
-                  ],
-                  "maxRetries": 2,
-                  "allowInterrupt": true
-                }
-              }
-            },
-            {
-              "name": "ProviderName",
-              "slotTypeName": "ProviderNameSlot",
-              "valueElicitationSetting": {
-                "slotConstraint": "Optional",
-                "promptSpecification": {
-                  "messageGroups": [
-                    {
-                      "message": {
-                        "plainTextMessage": {
-                          "value": "Do you have a preferred provider, or would you like to see the next available?"
-                        }
-                      }
-                    }
-                  ],
-                  "maxRetries": 2,
+                  "maxRetries": 5,
                   "allowInterrupt": true
                 }
               }
             }
           ],
-          "slotPriorities": [
-            {"priority": 1, "slotName": "AppointmentType"},
-            {"priority": 2, "slotName": "AppointmentDate"},
-            {"priority": 3, "slotName": "AppointmentTime"},
-            {"priority": 4, "slotName": "ProviderName"}
-          ],
-          "fulfillmentCodeHook": {
-            "enabled": true,
-            "postFulfillmentStatusSpecification": {
-              "successResponse": {
-                "messageGroups": [
-                  {
-                    "message": {
-                      "plainTextMessage": {
-                        "value": "Your appointment has been scheduled. You'll receive a confirmation shortly."
-                      }
-                    }
-                  }
-                ]
-              },
-              "failureResponse": {
-                "messageGroups": [
-                  {
-                    "message": {
-                      "plainTextMessage": {
-                        "value": "I'm sorry, I wasn't able to schedule that appointment. Would you like to try a different time?"
-                      }
-                    }
-                  }
-                ]
-              }
-            }
-          },
           "dialogCodeHook": {
             "enabled": true
           },
-          "intentConfirmationSetting": {
-            "promptSpecification": {
-              "messageGroups": [
-                {
-                  "message": {
-                    "plainTextMessage": {
-                      "value": "I have a {AppointmentType} appointment on {AppointmentDate} at {AppointmentTime}. Should I book this for you?"
+          "fulfillmentCodeHook": {
+            "enabled": true,
+            "fulfillmentUpdatesSpecification": {
+              "active": true,
+              "startResponse": {
+                "delayInSeconds": 0,
+                "messageGroups": [
+                  {
+                    "message": {
+                      "plainTextMessage": {
+                        "value": "Let me check that for you..."
+                      }
                     }
                   }
-                }
-              ],
-              "maxRetries": 2,
-              "allowInterrupt": true
-            },
-            "declinationResponse": {
-              "messageGroups": [
-                {
-                  "message": {
-                    "plainTextMessage": {
-                      "value": "No problem. Would you like to try a different date or time?"
+                ],
+                "allowInterrupt": true
+              },
+              "updateResponse": {
+                "frequencyInSeconds": 1,
+                "messageGroups": [
+                  {
+                    "message": {
+                      "plainTextMessage": {
+                        "value": "Still working on it..."
+                      }
                     }
                   }
-                }
-              ]
+                ],
+                "allowInterrupt": true
+              },
+              "timeoutInSeconds": 30
             }
-          }
-        },
-        {
-          "name": "CheckAppointment",
-          "description": "Check existing appointments",
-          "sampleUtterances": [
-            {"utterance": "What are my upcoming appointments"},
-            {"utterance": "Do I have any appointments scheduled"},
-            {"utterance": "Check my appointments"},
-            {"utterance": "When is my next appointment"},
-            {"utterance": "Show me my appointments"},
-            {"utterance": "What appointments do I have"},
-            {"utterance": "My upcoming visits"}
-          ],
-          "fulfillmentCodeHook": {
-            "enabled": true
-          }
-        },
-        {
-          "name": "CancelAppointment",
-          "description": "Cancel an existing appointment",
-          "sampleUtterances": [
-            {"utterance": "I need to cancel my appointment"},
-            {"utterance": "Cancel my appointment"},
-            {"utterance": "I can't make my appointment"},
-            {"utterance": "Please cancel my visit"},
-            {"utterance": "I need to cancel"},
-            {"utterance": "Cancel my appointment on {AppointmentDate}"}
-          ],
-          "slots": [
-            {
-              "name": "AppointmentDate",
-              "slotTypeName": "AMAZON.Date",
-              "valueElicitationSetting": {
-                "slotConstraint": "Optional",
-                "promptSpecification": {
-                  "messageGroups": [
-                    {
-                      "message": {
-                        "plainTextMessage": {
-                          "value": "Which appointment would you like to cancel? Please provide the date."
-                        }
-                      }
-                    }
-                  ],
-                  "maxRetries": 2,
-                  "allowInterrupt": true
-                }
-              }
-            }
-          ],
-          "fulfillmentCodeHook": {
-            "enabled": true
-          },
-          "intentConfirmationSetting": {
-            "promptSpecification": {
-              "messageGroups": [
-                {
-                  "message": {
-                    "plainTextMessage": {
-                      "value": "Are you sure you want to cancel your appointment?"
-                    }
-                  }
-                }
-              ],
-              "maxRetries": 2,
-              "allowInterrupt": true
-            },
-            "declinationResponse": {
-              "messageGroups": [
-                {
-                  "message": {
-                    "plainTextMessage": {
-                      "value": "Okay, I won't cancel your appointment."
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "RescheduleAppointment",
-          "description": "Reschedule an existing appointment",
-          "sampleUtterances": [
-            {"utterance": "I need to reschedule my appointment"},
-            {"utterance": "Can I change my appointment"},
-            {"utterance": "Reschedule my appointment"},
-            {"utterance": "Move my appointment to {NewDate}"},
-            {"utterance": "I need to change the time of my appointment"},
-            {"utterance": "Can I reschedule to {NewDate} at {NewTime}"}
-          ],
-          "slots": [
-            {
-              "name": "NewDate",
-              "slotTypeName": "AMAZON.Date",
-              "valueElicitationSetting": {
-                "slotConstraint": "Required",
-                "promptSpecification": {
-                  "messageGroups": [
-                    {
-                      "message": {
-                        "plainTextMessage": {
-                          "value": "What date would you like to reschedule to?"
-                        }
-                      }
-                    }
-                  ],
-                  "maxRetries": 2,
-                  "allowInterrupt": true
-                }
-              }
-            },
-            {
-              "name": "NewTime",
-              "slotTypeName": "AMAZON.Time",
-              "valueElicitationSetting": {
-                "slotConstraint": "Required",
-                "promptSpecification": {
-                  "messageGroups": [
-                    {
-                      "message": {
-                        "plainTextMessage": {
-                          "value": "What time would you prefer?"
-                        }
-                      }
-                    }
-                  ],
-                  "maxRetries": 2,
-                  "allowInterrupt": true
-                }
-              }
-            }
-          ],
-          "fulfillmentCodeHook": {
-            "enabled": true
-          }
-        },
-        {
-          "name": "PayBill",
-          "description": "Make a payment or check balance",
-          "sampleUtterances": [
-            {"utterance": "I want to pay my bill"},
-            {"utterance": "Make a payment"},
-            {"utterance": "Pay my copay"},
-            {"utterance": "What do I owe"},
-            {"utterance": "Check my balance"},
-            {"utterance": "I need to pay"},
-            {"utterance": "How much is my bill"},
-            {"utterance": "Pay {Amount} dollars"}
-          ],
-          "slots": [
-            {
-              "name": "Amount",
-              "slotTypeName": "AMAZON.Number",
-              "valueElicitationSetting": {
-                "slotConstraint": "Optional",
-                "promptSpecification": {
-                  "messageGroups": [
-                    {
-                      "message": {
-                        "plainTextMessage": {
-                          "value": "How much would you like to pay?"
-                        }
-                      }
-                    }
-                  ],
-                  "maxRetries": 2,
-                  "allowInterrupt": true
-                }
-              }
-            }
-          ],
-          "fulfillmentCodeHook": {
-            "enabled": true
-          }
-        },
-        {
-          "name": "RefillPrescription",
-          "description": "Request prescription refill",
-          "sampleUtterances": [
-            {"utterance": "I need a prescription refill"},
-            {"utterance": "Refill my prescription"},
-            {"utterance": "I need more medication"},
-            {"utterance": "Can I get a refill"},
-            {"utterance": "Refill my {MedicationName}"},
-            {"utterance": "I'm out of my medication"}
-          ],
-          "slots": [
-            {
-              "name": "MedicationName",
-              "slotTypeName": "AMAZON.FreeFormInput",
-              "valueElicitationSetting": {
-                "slotConstraint": "Optional",
-                "promptSpecification": {
-                  "messageGroups": [
-                    {
-                      "message": {
-                        "plainTextMessage": {
-                          "value": "Which medication would you like to refill?"
-                        }
-                      }
-                    }
-                  ],
-                  "maxRetries": 2,
-                  "allowInterrupt": true
-                }
-              }
-            }
-          ],
-          "fulfillmentCodeHook": {
-            "enabled": true
-          }
-        },
-        {
-          "name": "SpeakToAgent",
-          "description": "Transfer to human agent",
-          "sampleUtterances": [
-            {"utterance": "I want to speak to a person"},
-            {"utterance": "Transfer me to an agent"},
-            {"utterance": "I need to talk to someone"},
-            {"utterance": "Human please"},
-            {"utterance": "Agent"},
-            {"utterance": "Representative"},
-            {"utterance": "I want to talk to a real person"},
-            {"utterance": "Connect me to someone"}
-          ],
-          "fulfillmentCodeHook": {
-            "enabled": true
-          }
-        },
-        {
-          "name": "GetHours",
-          "description": "Get office hours and location",
-          "sampleUtterances": [
-            {"utterance": "What are your hours"},
-            {"utterance": "When are you open"},
-            {"utterance": "Office hours"},
-            {"utterance": "What time do you open"},
-            {"utterance": "What time do you close"},
-            {"utterance": "Are you open on weekends"},
-            {"utterance": "Where are you located"},
-            {"utterance": "What is your address"}
-          ],
-          "fulfillmentCodeHook": {
-            "enabled": true
           }
         },
         {
           "name": "FallbackIntent",
-          "description": "Default fallback intent",
+          "description": "Fallback - also handled by GenAI",
           "parentIntentSignature": "AMAZON.FallbackIntent",
+          "dialogCodeHook": {
+            "enabled": true
+          },
           "fulfillmentCodeHook": {
             "enabled": true
           }
-        }
-      ],
-      "slotTypes": [
-        {
-          "name": "AppointmentTypeSlot",
-          "description": "Types of medical appointments",
-          "valueSelectionSetting": {
-            "resolutionStrategy": "TOP_RESOLUTION"
-          },
-          "slotTypeValues": [
-            {
-              "sampleValue": {"value": "annual checkup"},
-              "synonyms": [
-                {"value": "checkup"},
-                {"value": "physical"},
-                {"value": "yearly checkup"},
-                {"value": "wellness visit"},
-                {"value": "annual physical"},
-                {"value": "yearly physical"}
-              ]
-            },
-            {
-              "sampleValue": {"value": "follow-up"},
-              "synonyms": [
-                {"value": "follow up"},
-                {"value": "followup"},
-                {"value": "follow up visit"},
-                {"value": "follow-up visit"}
-              ]
-            },
-            {
-              "sampleValue": {"value": "sick visit"},
-              "synonyms": [
-                {"value": "sick"},
-                {"value": "I'm sick"},
-                {"value": "not feeling well"},
-                {"value": "illness"}
-              ]
-            },
-            {
-              "sampleValue": {"value": "specialist"},
-              "synonyms": [
-                {"value": "specialist consultation"},
-                {"value": "specialist visit"},
-                {"value": "referral"},
-                {"value": "consultation"}
-              ]
-            },
-            {
-              "sampleValue": {"value": "vaccination"},
-              "synonyms": [
-                {"value": "vaccine"},
-                {"value": "shot"},
-                {"value": "flu shot"},
-                {"value": "immunization"}
-              ]
-            },
-            {
-              "sampleValue": {"value": "lab work"},
-              "synonyms": [
-                {"value": "labs"},
-                {"value": "blood work"},
-                {"value": "blood test"},
-                {"value": "testing"}
-              ]
-            }
-          ]
-        },
-        {
-          "name": "ProviderNameSlot",
-          "description": "Healthcare provider names",
-          "valueSelectionSetting": {
-            "resolutionStrategy": "TOP_RESOLUTION"
-          },
-          "slotTypeValues": [
-            {"sampleValue": {"value": "any available"}},
-            {"sampleValue": {"value": "next available"}},
-            {"sampleValue": {"value": "no preference"}}
-          ]
         }
       ]
     }
