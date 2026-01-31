@@ -449,17 +449,12 @@ function buildConversationalResponse(
     .join('\n');
 
   if (nextAction === 'continue') {
-    // Continue conversation - elicit more input
+    // Continue conversation - elicit more input using ElicitIntent
     return {
       sessionState: {
         sessionAttributes,
         dialogAction: {
-          type: 'ElicitSlot',
-          slotToElicit: 'UserInput',
-        },
-        intent: {
-          ...event.sessionState.intent,
-          state: 'InProgress',
+          type: 'ElicitIntent',
         },
       },
       messages: [
@@ -549,10 +544,8 @@ function buildErrorResponse(event: LexEvent, message: string): any {
     sessionState: {
       sessionAttributes: event.sessionState.sessionAttributes,
       dialogAction: {
-        type: 'ElicitSlot',
-        slotToElicit: 'UserInput',
+        type: 'ElicitIntent',
       },
-      intent: event.sessionState.intent,
     },
     messages: [
       {
