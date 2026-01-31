@@ -486,16 +486,16 @@ export class Phase1FoundationStack extends cdk.Stack {
       exportName: `medcx-${envName}-otp-table`,
     });
 
-    new cdk.CfnOutput(this, 'UserPoolId', {
+    new cdk.CfnOutput(this, 'PatientUserPoolId', {
       value: this.userPool.userPoolId,
-      description: 'Cognito User Pool ID',
-      exportName: `medcx-${envName}-user-pool-id`,
+      description: 'Patient Cognito User Pool ID',
+      exportName: `medcx-${envName}-patient-user-pool-id`,
     });
 
-    new cdk.CfnOutput(this, 'UserPoolClientId', {
+    new cdk.CfnOutput(this, 'PatientUserPoolClientId', {
       value: this.userPoolClient.userPoolClientId,
-      description: 'Cognito User Pool Client ID',
-      exportName: `medcx-${envName}-user-pool-client-id`,
+      description: 'Patient Cognito User Pool Client ID',
+      exportName: `medcx-${envName}-patient-user-pool-client-id`,
     });
   }
 }
