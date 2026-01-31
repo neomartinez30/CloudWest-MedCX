@@ -200,11 +200,12 @@ export class Phase2Patient360Stack extends cdk.Stack {
       apiKeyRequired: true,
     });
 
-    const patientConversationsResource = patientsResource
-      .addResource('{patientId}')
-      .addResource('conversations');
+    const patientConversationsResource = patientByIdResource.addResource('conversations');
+    patientConversationsResource.addMethod('GET', new apigateway.LambdaIntegration(this.conversationManagerFunction), {
+      apiKeyRequired: true,
+    });
 
-    // Note: Can't add to patientByIdResource since it already has {patientId}
+    // Note: Using conversations resource with threadId for individual conversation access
     // Using the conversations resource with query params instead
     const conversationByIdResource = conversationsResource.addResource('{threadId}');
 
