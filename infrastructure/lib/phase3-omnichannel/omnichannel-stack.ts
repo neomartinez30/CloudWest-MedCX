@@ -345,28 +345,13 @@ export class Phase3OmnichannelStack extends cdk.Stack {
       maxBatchingWindow: cdk.Duration.seconds(5),
     });
 
-    // Process outbound messages from queue (SMS)
-    this.smsHandlerFunction.addEventSourceMapping('OutboundSmsQueueMapping', {
+    // Process outbound messages from queue
+    // Note: Channel routing is handled by the channel router function
+    // which invokes the appropriate handler based on the message channel
+    this.channelRouterFunction.addEventSourceMapping('OutboundQueueMapping', {
       eventSourceArn: this.outboundMessageQueue.queueArn,
       batchSize: 10,
       maxBatchingWindow: cdk.Duration.seconds(5),
-      filterCriteria: lambda.FilterCriteria.filter({
-        body: {
-          channel: lambda.FilterRule.isEqual('sms'),
-        },
-      }),
-    });
-
-    // Process outbound messages from queue (Apple)
-    this.appleBusinessHandlerFunction.addEventSourceMapping('OutboundAppleQueueMapping', {
-      eventSourceArn: this.outboundMessageQueue.queueArn,
-      batchSize: 10,
-      maxBatchingWindow: cdk.Duration.seconds(5),
-      filterCriteria: lambda.FilterCriteria.filter({
-        body: {
-          channel: lambda.FilterRule.isEqual('apple_business'),
-        },
-      }),
     });
 
     // ========================================================================
