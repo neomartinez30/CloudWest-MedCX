@@ -1,12 +1,6 @@
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import {
-  DynamoDBDocumentClient,
-  GetCommand,
-  PutCommand,
-  QueryCommand,
-  UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { PinpointClient, SendMessagesCommand } from '@aws-sdk/client-pinpoint';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
@@ -24,10 +18,8 @@ const CONVERSATION_TABLE = process.env.CONVERSATION_TABLE!;
 const INTERACTION_TABLE = process.env.INTERACTION_TABLE!;
 const EVENT_BUS_NAME = process.env.EVENT_BUS_NAME!;
 const PINPOINT_APP_ID = process.env.PINPOINT_APP_ID!;
-const SMS_TOPIC_ARN = process.env.SMS_TOPIC_ARN!;
 const IDENTITY_RESOLVER_ARN = process.env.IDENTITY_RESOLVER_ARN!;
 const CONVERSATION_MANAGER_ARN = process.env.CONVERSATION_MANAGER_ARN!;
-const APPLE_MESSAGES_ENDPOINT = process.env.APPLE_MESSAGES_ENDPOINT!;
 
 type Channel = 'voice' | 'sms' | 'apple_messages' | 'web_chat';
 
@@ -96,9 +88,6 @@ export const handler = async (event: any): Promise<any> => {
   }
 };
 
-/**
- * Handle EventBridge events
- */
 async function handleEventBridgeEvent(event: any): Promise<any> {
   const { detail, 'detail-type': detailType } = event;
 
@@ -115,9 +104,6 @@ async function handleEventBridgeEvent(event: any): Promise<any> {
   }
 }
 
-/**
- * Route an inbound message from any channel
- */
 async function routeInboundMessage(data: ChannelMessage): Promise<any> {
   const { channel, phoneNumber, content, metadata } = data;
   const now = new Date().toISOString();
@@ -129,7 +115,6 @@ async function routeInboundMessage(data: ChannelMessage): Promise<any> {
     patientId = identity?.patientId;
 
     if (!patientId) {
-      // Create new patient
       const newIdentity = await resolveIdentity(phoneNumber, channel, true);
       patientId = newIdentity?.patientId;
     }
@@ -188,13 +173,9 @@ async function routeInboundMessage(data: ChannelMessage): Promise<any> {
   };
 }
 
-/**
- * Send an outbound message through the appropriate channel
- */
 async function sendOutboundMessage(data: ChannelMessage): Promise<any> {
   const { channel, patientId, content, phoneNumber, messageType = 'text' } = data;
 
-  // Get patient info if needed
   let targetPhone = phoneNumber;
   if (!targetPhone && patientId) {
     const patient = await getPatient(patientId);
@@ -216,15 +197,13 @@ async function sendOutboundMessage(data: ChannelMessage): Promise<any> {
       break;
 
     case 'voice':
-      // Voice messages are handled differently (text-to-speech via Connect)
       result = { success: true, message: 'Voice message queued' };
       break;
 
     default:
-      result = await sendSMS(targetPhone, content); // Default to SMS
+      result = await sendSMS(targetPhone, content);
   }
 
-  // Record in conversation
   if (patientId) {
     const conversationResult = await invokeFunction(CONVERSATION_MANAGER_ARN, {
       action: 'getOrCreateThread',
@@ -255,9 +234,6 @@ async function sendOutboundMessage(data: ChannelMessage): Promise<any> {
   return result;
 }
 
-/**
- * Handle channel handoff (e.g., voice to SMS)
- */
 async function handoffToChannel(data: {
   patientId: string;
   fromChannel: Channel;
@@ -266,7 +242,6 @@ async function handoffToChannel(data: {
 }): Promise<any> {
   const { patientId, fromChannel, toChannel, message } = data;
 
-  // Update conversation context
   await invokeFunction(CONVERSATION_MANAGER_ARN, {
     action: 'handoffChannel',
     patientId,
@@ -275,7 +250,6 @@ async function handoffToChannel(data: {
     handoffMessage: message,
   });
 
-  // Send handoff message if provided
   if (message) {
     await sendOutboundMessage({
       channel: toChannel,
@@ -285,7 +259,6 @@ async function handoffToChannel(data: {
     });
   }
 
-  // Emit event
   await emitEvent('ChannelHandoffCompleted', {
     patientId,
     fromChannel,
@@ -300,9 +273,6 @@ async function handoffToChannel(data: {
   };
 }
 
-/**
- * Send interactive message (for Apple Messages for Business)
- */
 async function sendInteractiveMessage(data: {
   patientId: string;
   interactiveType: InteractiveMessage['type'];
@@ -310,13 +280,11 @@ async function sendInteractiveMessage(data: {
 }): Promise<any> {
   const { patientId, interactiveType, payload } = data;
 
-  // Get patient
   const patient = await getPatient(patientId);
   if (!patient?.phoneNumber) {
     return { error: 'Patient phone number not found' };
   }
 
-  // Build interactive message based on type
   let interactivePayload;
   switch (interactiveType) {
     case 'time_picker':
@@ -339,7 +307,6 @@ async function sendInteractiveMessage(data: {
       return { error: 'Unknown interactive message type' };
   }
 
-  // Store in conversation
   await invokeFunction(CONVERSATION_MANAGER_ARN, {
     action: 'sendInteractiveMessage',
     threadId: `thread-${patientId}`,
@@ -348,9 +315,6 @@ async function sendInteractiveMessage(data: {
     payload: interactivePayload,
   });
 
-  // TODO: Actually send via Apple Messages for Business API
-  // This would integrate with the Apple Business Chat API
-
   return {
     success: true,
     interactiveType,
@@ -358,9 +322,6 @@ async function sendInteractiveMessage(data: {
   };
 }
 
-/**
- * Get conversation context for a patient
- */
 async function getConversationContext(patientId: string): Promise<any> {
   const [patient, recentMessages, recentInteractions] = await Promise.all([
     getPatient(patientId),
@@ -368,7 +329,6 @@ async function getConversationContext(patientId: string): Promise<any> {
     getRecentInteractions(patientId),
   ]);
 
-  // Determine channel history
   const channelHistory = new Set<string>();
   recentInteractions.forEach((i: any) => {
     if (i.channel) channelHistory.add(i.channel);
@@ -386,10 +346,6 @@ async function getConversationContext(patientId: string): Promise<any> {
     lastInteraction: recentInteractions[0]?.interactionTimestamp,
   };
 }
-
-// ============================================================================
-// Channel-specific send functions
-// ============================================================================
 
 async function sendSMS(phoneNumber: string, message: string): Promise<any> {
   const command = new SendMessagesCommand({
@@ -420,40 +376,12 @@ async function sendSMS(phoneNumber: string, message: string): Promise<any> {
 }
 
 async function sendAppleMessage(phoneNumber: string, message: string, interactive?: any): Promise<any> {
-  const payload: any = {
+  await emitEvent('SendAppleMessage', {
     destinationId: phoneNumber,
     body: message,
-  };
-
-  // Add interactive message payload if provided
-  if (interactive) {
-    payload.interactiveData = interactive;
-  }
-
-  // Send to Apple Messages endpoint via EventBridge for processing
-  await emitEvent('SendAppleMessage', {
-    ...payload,
+    interactiveData: interactive,
     timestamp: new Date().toISOString(),
   });
-
-  // Also send via SNS for the Apple Messages integration handler
-  if (SMS_TOPIC_ARN) {
-    await snsClient.send(new PublishCommand({
-      TopicArn: SMS_TOPIC_ARN,
-      Message: JSON.stringify({
-        type: 'apple-messages',
-        to: phoneNumber,
-        body: message,
-        interactiveData: interactive,
-      }),
-      MessageAttributes: {
-        channel: {
-          DataType: 'String',
-          StringValue: 'apple_messages',
-        },
-      },
-    }));
-  }
 
   return {
     success: true,
@@ -461,22 +389,13 @@ async function sendAppleMessage(phoneNumber: string, message: string, interactiv
   };
 }
 
-// ============================================================================
-// Interactive message builders for Apple Messages
-// ============================================================================
-
 function buildTimePicker(payload: any): any {
   return {
     type: 'interactive',
     interactive: {
       type: 'timePicker',
-      header: {
-        type: 'text',
-        text: payload.title || 'Select a Time',
-      },
-      body: {
-        text: payload.subtitle || 'Choose an available time slot',
-      },
+      header: { type: 'text', text: payload.title || 'Select a Time' },
+      body: { text: payload.subtitle || 'Choose an available time slot' },
       action: {
         event: {
           title: payload.eventTitle || 'Appointment',
@@ -495,13 +414,8 @@ function buildListPicker(payload: any): any {
     type: 'interactive',
     interactive: {
       type: 'listPicker',
-      header: {
-        type: 'text',
-        text: payload.title || 'Select an Option',
-      },
-      body: {
-        text: payload.subtitle || 'Choose from the options below',
-      },
+      header: { type: 'text', text: payload.title || 'Select an Option' },
+      body: { text: payload.subtitle || 'Choose from the options below' },
       action: {
         sections: payload.sections?.map((section: any) => ({
           title: section.title,
@@ -533,26 +447,16 @@ function buildQuickReplies(payload: any): any {
     type: 'interactive',
     interactive: {
       type: 'quickReply',
-      header: {
-        type: 'text',
-        text: payload.title,
-      },
+      header: { type: 'text', text: payload.title },
       action: {
         buttons: payload.replies?.map((reply: any) => ({
           type: 'reply',
-          reply: {
-            id: reply.id,
-            title: reply.title,
-          },
+          reply: { id: reply.id, title: reply.title },
         })),
       },
     },
   };
 }
-
-// ============================================================================
-// Helper functions
-// ============================================================================
 
 async function resolveIdentity(phoneNumber: string, channel: string, createIfNotFound = false): Promise<any> {
   return invokeFunction(IDENTITY_RESOLVER_ARN, {
@@ -622,19 +526,4 @@ async function emitEvent(detailType: string, detail: Record<string, any>): Promi
       Detail: JSON.stringify(detail),
     }],
   }));
-}
-
-/**
- * Format API Gateway response
- */
-function formatResponse(statusCode: number, body: any): any {
-  return {
-    statusCode,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key',
-    },
-    body: JSON.stringify(body),
-  };
 }
