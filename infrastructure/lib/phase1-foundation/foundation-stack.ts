@@ -256,54 +256,17 @@ export class Phase1FoundationStack extends cdk.Stack {
     });
 
     // ========================================================================
-    // Cognito User Pool - Patient Authentication
+    // Cognito User Pool - Import existing User Pool from Dashboard stack
     // ========================================================================
-    this.userPool = new cognito.UserPool(this, 'PatientUserPool', {
-      userPoolName: `medcx-${envName}-patients`,
-      selfSignUpEnabled: false, // Controlled enrollment via our flow
-      signInAliases: {
-        phone: true,
-        email: true,
-      },
-      autoVerify: {
-        phone: true,
-      },
-      standardAttributes: {
-        phoneNumber: {
-          required: true,
-          mutable: true,
-        },
-        givenName: {
-          required: true,
-          mutable: true,
-        },
-        familyName: {
-          required: true,
-          mutable: true,
-        },
-        email: {
-          required: false,
-          mutable: true,
-        },
-      },
-      customAttributes: {
-        patientId: new cognito.StringAttribute({ mutable: false }),
-        dateOfBirth: new cognito.StringAttribute({ mutable: true }),
-        preferredChannel: new cognito.StringAttribute({ mutable: true }),
-      },
-      passwordPolicy: {
-        minLength: 8,
-        requireLowercase: true,
-        requireUppercase: true,
-        requireDigits: true,
-        requireSymbols: false,
-      },
-      accountRecovery: cognito.AccountRecovery.PHONE_ONLY_WITHOUT_MFA,
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-    });
+    this.userPool = cognito.UserPool.fromUserPoolArn(
+      this,
+      'ImportedUserPool',
+      'arn:aws:cognito-idp:us-east-1:203918854345:userpool/us-east-1_gmucWFH04'
+    ) as cognito.UserPool;
 
     // User Pool Client for Connect/Lambda integration
-    this.userPoolClient = this.userPool.addClient('ConnectClient', {
+    this.userPoolClient = new cognito.UserPoolClient(this, 'ConnectClient', {
+      userPool: this.userPool,
       userPoolClientName: `medcx-${envName}-connect-client`,
       authFlows: {
         adminUserPassword: true,
@@ -486,16 +449,10 @@ export class Phase1FoundationStack extends cdk.Stack {
       exportName: `medcx-${envName}-otp-table`,
     });
 
-    new cdk.CfnOutput(this, 'PatientUserPoolId', {
-      value: this.userPool.userPoolId,
-      description: 'Patient Cognito User Pool ID',
-      exportName: `medcx-${envName}-patient-user-pool-id`,
-    });
-
-    new cdk.CfnOutput(this, 'PatientUserPoolClientId', {
+    new cdk.CfnOutput(this, 'ConnectClientId', {
       value: this.userPoolClient.userPoolClientId,
-      description: 'Patient Cognito User Pool Client ID',
-      exportName: `medcx-${envName}-patient-user-pool-client-id`,
+      description: 'Cognito User Pool Client ID for Connect integration',
+      exportName: `medcx-${envName}-connect-client-id`,
     });
   }
 }
