@@ -171,6 +171,10 @@ export class Phase5DocumentsPaymentsStack extends cdk.Stack {
       },
       layers: [sharedLayer],
       tracing: lambda.Tracing.ACTIVE,
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+        nodeModules: ['stripe'],
+      },
     });
 
     // Grant permissions
@@ -195,6 +199,10 @@ export class Phase5DocumentsPaymentsStack extends cdk.Stack {
       },
       layers: [sharedLayer],
       tracing: lambda.Tracing.ACTIVE,
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+        nodeModules: ['stripe'],
+      },
     });
 
     // Grant permissions
