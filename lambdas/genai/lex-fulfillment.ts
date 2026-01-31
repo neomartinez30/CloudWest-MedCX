@@ -85,6 +85,12 @@ When the patient confirms they want to take an action, respond with your message
 {"action": "check_appointments"}
 \`\`\`
 
+\`\`\`action
+{"action": "end_call"}
+\`\`\`
+
+Use "end_call" when the patient says goodbye, thanks you and is done, or indicates they're finished with the call.
+
 ## Patient Context:
 {PATIENT_CONTEXT}
 
@@ -119,23 +125,44 @@ export const handler = async (event: LexEvent): Promise<any> => {
 
     // Execute any actions
     let finalResponse = response;
+    let nextAction: 'continue' | 'completed' | 'send_sms' | 'end_call' = 'continue';
+    let smsContext: string | undefined;
+
     if (action) {
       const actionResult = await executeAction(action, context);
       if (actionResult.additionalMessage) {
         finalResponse = actionResult.additionalMessage;
       }
       if (actionResult.transferToAgent) {
-        return buildTransferResponse(event, context, finalResponse);
+        return buildTransferResponse(event, context, finalResponse, action.reason);
+      }
+
+      // Determine nextAction based on the action type
+      switch (action.action) {
+        case 'schedule_appointment':
+        case 'cancel_appointment':
+        case 'check_appointments':
+          nextAction = actionResult.success ? 'completed' : 'continue';
+          break;
+        case 'send_sms':
+          nextAction = 'send_sms';
+          smsContext = JSON.stringify({
+            message: action.message,
+            includeTimePicker: action.includeTimePicker,
+          });
+          break;
+        case 'end_call':
+          nextAction = 'end_call';
+          break;
+        default:
+          nextAction = 'continue';
       }
     }
 
     // Save updated context
     await saveContext(context, sessionAttributes);
 
-    // Check if we should continue the conversation
-    const shouldContinue = !action || action.action !== 'transfer_to_agent';
-
-    return buildConversationalResponse(event, context, finalResponse, shouldContinue);
+    return buildConversationalResponse(event, context, finalResponse, nextAction, smsContext);
 
   } catch (error) {
     console.error('Error in conversational fulfillment:', error);
@@ -364,6 +391,9 @@ async function executeAction(
     case 'transfer_to_agent':
       return { success: true, transferToAgent: true };
 
+    case 'end_call':
+      return { success: true };
+
     default:
       return { success: false };
   }
@@ -396,16 +426,29 @@ function buildConversationalResponse(
   event: LexEvent,
   context: ConversationContext,
   message: string,
-  shouldContinue: boolean
+  nextAction: 'continue' | 'completed' | 'send_sms' | 'end_call',
+  smsContext?: string
 ): any {
   const sessionAttributes = event.sessionState.sessionAttributes || {};
 
-  // Update session attributes
+  // Update session attributes for Connect flow
   sessionAttributes.conversationHistory = JSON.stringify(context.conversationHistory.slice(-10));
   sessionAttributes.patientId = context.patientId || '';
   sessionAttributes.patientName = context.patientName || '';
+  sessionAttributes.assistantResponse = message;
+  sessionAttributes.nextAction = nextAction;
 
-  if (shouldContinue) {
+  if (smsContext) {
+    sessionAttributes.smsContext = smsContext;
+  }
+
+  // Build conversation summary for agent transfer context
+  const recentHistory = context.conversationHistory.slice(-5);
+  sessionAttributes.conversationSummary = recentHistory
+    .map(msg => `${msg.role === 'user' ? 'Patient' : 'Bot'}: ${msg.content}`)
+    .join('\n');
+
+  if (nextAction === 'continue') {
     // Continue conversation - elicit more input
     return {
       sessionState: {
@@ -428,7 +471,7 @@ function buildConversationalResponse(
     };
   }
 
-  // End conversation
+  // End conversation (completed, send_sms, or end_call)
   return {
     sessionState: {
       sessionAttributes,
@@ -455,11 +498,24 @@ function buildConversationalResponse(
 function buildTransferResponse(
   event: LexEvent,
   context: ConversationContext,
-  message: string
+  message: string,
+  reason?: string
 ): any {
   const sessionAttributes = event.sessionState.sessionAttributes || {};
-  sessionAttributes.transferReason = 'customer_request';
-  sessionAttributes.conversationSummary = JSON.stringify(context.conversationHistory.slice(-5));
+
+  // Set session attributes for Connect flow
+  sessionAttributes.nextAction = 'transfer_to_agent';
+  sessionAttributes.assistantResponse = message;
+  sessionAttributes.transferReason = reason || 'customer_request';
+
+  // Build readable conversation summary for agent
+  const recentHistory = context.conversationHistory.slice(-5);
+  sessionAttributes.conversationSummary = recentHistory
+    .map(msg => `${msg.role === 'user' ? 'Patient' : 'Bot'}: ${msg.content}`)
+    .join('\n');
+
+  sessionAttributes.patientId = context.patientId || '';
+  sessionAttributes.patientName = context.patientName || '';
 
   return {
     sessionState: {

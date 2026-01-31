@@ -5,20 +5,23 @@
     "entryPointPosition": {"x": 20, "y": 20},
     "ActionMetadata": {
       "Welcome": {"position": {"x": 180, "y": 20}},
-      "GetCustomerInput": {"position": {"x": 420, "y": 20}},
-      "InvokeLambdaIdentity": {"position": {"x": 660, "y": 20}},
-      "SetContactAttributes": {"position": {"x": 900, "y": 20}},
-      "PlayWelcomePrompt": {"position": {"x": 180, "y": 200}},
-      "GetLexInput": {"position": {"x": 420, "y": 200}},
-      "InvokeLambdaFulfillment": {"position": {"x": 660, "y": 200}},
-      "CheckResult": {"position": {"x": 900, "y": 200}},
+      "InvokeLambdaIdentity": {"position": {"x": 420, "y": 20}},
+      "SetContactAttributes": {"position": {"x": 660, "y": 20}},
+      "PersonalizedGreeting": {"position": {"x": 900, "y": 20}},
+      "ConversationLoop": {"position": {"x": 180, "y": 200}},
+      "CheckAction": {"position": {"x": 420, "y": 200}},
+      "ContinueConversation": {"position": {"x": 660, "y": 200}},
+      "TransferToQueue": {"position": {"x": 900, "y": 200}},
       "PlayConfirmation": {"position": {"x": 180, "y": 380}},
-      "TransferToQueue": {"position": {"x": 420, "y": 380}},
-      "PlayError": {"position": {"x": 660, "y": 380}},
-      "DisconnectHangup": {"position": {"x": 900, "y": 380}},
-      "OfferSMS": {"position": {"x": 180, "y": 560}},
-      "GetSMSConsent": {"position": {"x": 420, "y": 560}},
-      "SendSMSLink": {"position": {"x": 660, "y": 560}}
+      "OfferMore": {"position": {"x": 420, "y": 380}},
+      "OfferSMS": {"position": {"x": 660, "y": 380}},
+      "GetSMSConsent": {"position": {"x": 900, "y": 380}},
+      "SendSMSLink": {"position": {"x": 180, "y": 560}},
+      "PlaySMSConfirmation": {"position": {"x": 420, "y": 560}},
+      "PlayHoldMessage": {"position": {"x": 660, "y": 560}},
+      "PlayError": {"position": {"x": 900, "y": 560}},
+      "DisconnectHangup": {"position": {"x": 180, "y": 740}},
+      "EndCall": {"position": {"x": 420, "y": 740}}
     }
   },
   "Actions": [
@@ -26,13 +29,12 @@
       "Identifier": "Welcome",
       "Type": "MessageParticipant",
       "Parameters": {
-        "PromptId": null,
-        "Text": "Thank you for calling CloudWest Medical Center. Your call may be recorded for quality purposes."
+        "Text": "Thank you for calling CloudWest Medical Center."
       },
       "Transitions": {
         "NextAction": "InvokeLambdaIdentity",
         "Errors": [
-          {"NextAction": "PlayWelcomePrompt", "ErrorType": "NoMatchingError"}
+          {"NextAction": "PersonalizedGreeting", "ErrorType": "NoMatchingError"}
         ]
       }
     },
@@ -50,7 +52,7 @@
       "Transitions": {
         "NextAction": "SetContactAttributes",
         "Errors": [
-          {"NextAction": "PlayWelcomePrompt", "ErrorType": "NoMatchingError"}
+          {"NextAction": "PersonalizedGreeting", "ErrorType": "NoMatchingError"}
         ]
       }
     },
@@ -61,134 +63,114 @@
         "Attributes": {
           "patientId": "$.External.patientId",
           "patientName": "$.External.firstName",
-          "isNewPatient": "$.External.isNewPatient"
+          "isNewPatient": "$.External.isNewPatient",
+          "conversationHistory": "[]"
         }
       },
       "Transitions": {
-        "NextAction": "PlayWelcomePrompt",
+        "NextAction": "PersonalizedGreeting",
         "Errors": [
-          {"NextAction": "PlayWelcomePrompt", "ErrorType": "NoMatchingError"}
+          {"NextAction": "PersonalizedGreeting", "ErrorType": "NoMatchingError"}
         ]
       }
     },
     {
-      "Identifier": "PlayWelcomePrompt",
+      "Identifier": "PersonalizedGreeting",
       "Type": "MessageParticipant",
       "Parameters": {
-        "Text": "Hello $.Attributes.patientName. How can I help you today? You can say things like schedule an appointment, check my appointments, pay my bill, or speak to an agent."
+        "Text": "Hi $.Attributes.patientName! I'm your virtual assistant powered by AI. How can I help you today?"
       },
       "Transitions": {
-        "NextAction": "GetLexInput",
+        "NextAction": "ConversationLoop",
         "Errors": [
-          {"NextAction": "GetLexInput", "ErrorType": "NoMatchingError"}
+          {"NextAction": "ConversationLoop", "ErrorType": "NoMatchingError"}
         ]
       }
     },
     {
-      "Identifier": "GetLexInput",
+      "Identifier": "ConversationLoop",
       "Type": "ConnectParticipantWithLexBot",
       "Parameters": {
         "LexBot": {
-          "Name": "MedCXSchedulerBot",
+          "Name": "MedCXConversationalBot",
           "Region": "us-east-1",
-          "Alias": "$LATEST"
+          "Alias": "live"
         },
         "LexSessionAttributes": {
           "patientId": "$.Attributes.patientId",
           "patientName": "$.Attributes.patientName",
-          "phoneNumber": "$.CustomerEndpoint.Address"
+          "phoneNumber": "$.CustomerEndpoint.Address",
+          "channel": "voice"
         }
       },
       "Transitions": {
-        "NextAction": "InvokeLambdaFulfillment",
-        "Conditions": [
-          {
-            "NextAction": "TransferToQueue",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": ["SpeakToAgent"]
-            }
-          },
-          {
-            "NextAction": "InvokeLambdaFulfillment",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": ["ScheduleAppointment"]
-            }
-          },
-          {
-            "NextAction": "InvokeLambdaFulfillment",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": ["CheckAppointment"]
-            }
-          },
-          {
-            "NextAction": "InvokeLambdaFulfillment",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": ["CancelAppointment"]
-            }
-          },
-          {
-            "NextAction": "InvokeLambdaFulfillment",
-            "Condition": {
-              "Operator": "Equals",
-              "Operands": ["PayBill"]
-            }
-          }
-        ],
-        "Errors": [
-          {"NextAction": "PlayError", "ErrorType": "NoMatchingError"},
-          {"NextAction": "PlayError", "ErrorType": "NoMatchingCondition"}
-        ]
-      }
-    },
-    {
-      "Identifier": "InvokeLambdaFulfillment",
-      "Type": "InvokeLambdaFunction",
-      "Parameters": {
-        "LambdaFunctionARN": "REPLACE_WITH_LEX_FULFILLMENT_ARN",
-        "InvocationTimeLimitSeconds": "8",
-        "LambdaInvocationAttributes": {
-          "patientId": "$.Attributes.patientId",
-          "intent": "$.Lex.IntentName",
-          "slots": "$.Lex.Slots"
-        }
-      },
-      "Transitions": {
-        "NextAction": "CheckResult",
+        "NextAction": "CheckAction",
         "Errors": [
           {"NextAction": "PlayError", "ErrorType": "NoMatchingError"}
         ]
       }
     },
     {
-      "Identifier": "CheckResult",
+      "Identifier": "CheckAction",
       "Type": "Compare",
       "Parameters": {
-        "ComparisonValue": "$.External.success"
+        "ComparisonValue": "$.Lex.SessionAttributes.nextAction"
       },
       "Transitions": {
-        "NextAction": "PlayError",
+        "NextAction": "ContinueConversation",
         "Conditions": [
+          {
+            "NextAction": "TransferToQueue",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": ["transfer_to_agent"]
+            }
+          },
           {
             "NextAction": "PlayConfirmation",
             "Condition": {
               "Operator": "Equals",
-              "Operands": ["true"]
+              "Operands": ["completed"]
             }
           },
           {
             "NextAction": "OfferSMS",
             "Condition": {
               "Operator": "Equals",
-              "Operands": ["sms_required"]
+              "Operands": ["send_sms"]
+            }
+          },
+          {
+            "NextAction": "DisconnectHangup",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": ["end_call"]
+            }
+          },
+          {
+            "NextAction": "ContinueConversation",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": ["continue"]
             }
           }
         ],
         "Errors": [
-          {"NextAction": "PlayError", "ErrorType": "NoMatchingError"}
+          {"NextAction": "ContinueConversation", "ErrorType": "NoMatchingError"},
+          {"NextAction": "ContinueConversation", "ErrorType": "NoMatchingCondition"}
+        ]
+      }
+    },
+    {
+      "Identifier": "ContinueConversation",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "Text": "$.Lex.SessionAttributes.assistantResponse"
+      },
+      "Transitions": {
+        "NextAction": "ConversationLoop",
+        "Errors": [
+          {"NextAction": "ConversationLoop", "ErrorType": "NoMatchingError"}
         ]
       }
     },
@@ -196,7 +178,7 @@
       "Identifier": "PlayConfirmation",
       "Type": "MessageParticipant",
       "Parameters": {
-        "Text": "$.External.message"
+        "Text": "$.Lex.SessionAttributes.assistantResponse"
       },
       "Transitions": {
         "NextAction": "OfferMore",
@@ -209,20 +191,20 @@
       "Identifier": "OfferMore",
       "Type": "GetParticipantInput",
       "Parameters": {
-        "Text": "Is there anything else I can help you with?",
-        "InputTimeLimitSeconds": "5",
+        "Text": "Is there anything else I can help you with today?",
+        "InputTimeLimitSeconds": "8",
         "DTMF": {
           "InputTimeLimitSeconds": "5"
         }
       },
       "Transitions": {
-        "NextAction": "GetLexInput",
+        "NextAction": "ConversationLoop",
         "Conditions": [
           {
             "NextAction": "DisconnectHangup",
             "Condition": {
-              "Operator": "Equals",
-              "Operands": ["no", "that's all", "nothing", "bye", "goodbye"]
+              "Operator": "TextContains",
+              "Operands": ["no", "that's all", "nothing", "bye", "goodbye", "I'm good", "all set"]
             }
           }
         ],
@@ -236,7 +218,7 @@
       "Identifier": "OfferSMS",
       "Type": "MessageParticipant",
       "Parameters": {
-        "Text": "I can send you a link via text message to complete this on your phone. Would you like me to do that?"
+        "Text": "$.Lex.SessionAttributes.assistantResponse"
       },
       "Transitions": {
         "NextAction": "GetSMSConsent",
@@ -249,8 +231,8 @@
       "Identifier": "GetSMSConsent",
       "Type": "GetParticipantInput",
       "Parameters": {
-        "Text": "Please say yes or no.",
-        "InputTimeLimitSeconds": "5"
+        "Text": "Would you like me to send that to your phone via text message?",
+        "InputTimeLimitSeconds": "8"
       },
       "Transitions": {
         "NextAction": "TransferToQueue",
@@ -258,20 +240,21 @@
           {
             "NextAction": "SendSMSLink",
             "Condition": {
-              "Operator": "Equals",
-              "Operands": ["yes", "yeah", "sure", "okay", "ok"]
+              "Operator": "TextContains",
+              "Operands": ["yes", "yeah", "sure", "okay", "ok", "please", "send it"]
             }
           },
           {
-            "NextAction": "TransferToQueue",
+            "NextAction": "OfferMore",
             "Condition": {
-              "Operator": "Equals",
-              "Operands": ["no", "nope"]
+              "Operator": "TextContains",
+              "Operands": ["no", "nope", "don't", "not"]
             }
           }
         ],
         "Errors": [
-          {"NextAction": "TransferToQueue", "ErrorType": "NoMatchingError"}
+          {"NextAction": "OfferMore", "ErrorType": "NoMatchingError"},
+          {"NextAction": "OfferMore", "ErrorType": "InputTimeLimitExceeded"}
         ]
       }
     },
@@ -285,7 +268,7 @@
           "action": "sendHandoffSMS",
           "patientId": "$.Attributes.patientId",
           "phoneNumber": "$.CustomerEndpoint.Address",
-          "intent": "$.Lex.IntentName"
+          "context": "$.Lex.SessionAttributes.smsContext"
         }
       },
       "Transitions": {
@@ -299,7 +282,7 @@
       "Identifier": "PlaySMSConfirmation",
       "Type": "MessageParticipant",
       "Parameters": {
-        "Text": "I've sent you a text message with a link. You can complete your request there. Is there anything else I can help you with?"
+        "Text": "I've sent you a text message. You can continue there whenever you're ready."
       },
       "Transitions": {
         "NextAction": "OfferMore",
@@ -310,10 +293,38 @@
     },
     {
       "Identifier": "TransferToQueue",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "Text": "I'll connect you with one of our team members now."
+      },
+      "Transitions": {
+        "NextAction": "SetQueueAttributes",
+        "Errors": [
+          {"NextAction": "SetQueueAttributes", "ErrorType": "NoMatchingError"}
+        ]
+      }
+    },
+    {
+      "Identifier": "SetQueueAttributes",
+      "Type": "UpdateContactAttributes",
+      "Parameters": {
+        "Attributes": {
+          "conversationSummary": "$.Lex.SessionAttributes.conversationSummary",
+          "transferReason": "$.Lex.SessionAttributes.transferReason"
+        }
+      },
+      "Transitions": {
+        "NextAction": "TransferToQueueAction",
+        "Errors": [
+          {"NextAction": "TransferToQueueAction", "ErrorType": "NoMatchingError"}
+        ]
+      }
+    },
+    {
+      "Identifier": "TransferToQueueAction",
       "Type": "TransferContactToQueue",
       "Parameters": {
-        "QueueId": "REPLACE_WITH_QUEUE_ARN",
-        "ContactFlowId": null
+        "QueueId": "REPLACE_WITH_QUEUE_ARN"
       },
       "Transitions": {
         "NextAction": "PlayHoldMessage",
@@ -327,23 +338,23 @@
       "Identifier": "PlayHoldMessage",
       "Type": "MessageParticipant",
       "Parameters": {
-        "Text": "Please hold while I connect you with the next available agent. Your estimated wait time is less than 2 minutes."
+        "Text": "Please hold while I connect you. Your estimated wait time is less than two minutes."
       },
       "Transitions": {
-        "NextAction": "HoldCustomerInQueue",
+        "NextAction": "HoldLoop",
         "Errors": [
           {"NextAction": "DisconnectHangup", "ErrorType": "NoMatchingError"}
         ]
       }
     },
     {
-      "Identifier": "HoldCustomerInQueue",
+      "Identifier": "HoldLoop",
       "Type": "Loop",
       "Parameters": {
-        "LoopCount": "3"
+        "LoopCount": "10"
       },
       "Transitions": {
-        "NextAction": "DisconnectHangup",
+        "NextAction": "PlayError",
         "Conditions": [
           {
             "NextAction": "PlayHoldMusic",
@@ -362,17 +373,17 @@
         "LoopCount": "1"
       },
       "Transitions": {
-        "NextAction": "HoldCustomerInQueue"
+        "NextAction": "HoldLoop"
       }
     },
     {
       "Identifier": "PlayError",
       "Type": "MessageParticipant",
       "Parameters": {
-        "Text": "I'm sorry, I'm having trouble with that request. Let me connect you with someone who can help."
+        "Text": "I apologize, but I'm having some technical difficulties. Let me connect you with someone who can help."
       },
       "Transitions": {
-        "NextAction": "TransferToQueue",
+        "NextAction": "TransferToQueueAction",
         "Errors": [
           {"NextAction": "DisconnectHangup", "ErrorType": "NoMatchingError"}
         ]
@@ -382,7 +393,7 @@
       "Identifier": "DisconnectHangup",
       "Type": "MessageParticipant",
       "Parameters": {
-        "Text": "Thank you for calling CloudWest Medical Center. Have a great day!"
+        "Text": "Thank you for calling CloudWest Medical Center. Take care and have a wonderful day!"
       },
       "Transitions": {
         "NextAction": "EndCall",
