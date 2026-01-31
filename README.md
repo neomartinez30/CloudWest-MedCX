@@ -2,6 +2,7 @@
 
 ## Vision
 **The contact center as a 'relationship hub'**
+
 **Cost Center > Profit Center**
 
 The future of clinical contact centers powered by AWS that provides:
