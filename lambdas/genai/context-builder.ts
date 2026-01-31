@@ -154,7 +154,7 @@ async function buildConversationContext(patientId: string, channel?: string): Pr
     preferredChannel: profile?.preferredChannel || 'sms',
     currentChannel: channel,
     conversationHistory: conversations.map((msg: any) => ({
-      role: msg.direction === 'inbound' ? 'user' : 'assistant',
+      role: msg.direction === 'INBOUND' ? 'user' : 'assistant',
       content: msg.content,
       timestamp: msg.messageTimestamp,
       channel: msg.channel,
@@ -235,7 +235,7 @@ ${context.appointments.upcoming.slice(0, 3).map((apt: any) =>
   if (context.conversations.recentMessages.length > 0) {
     formattedContext += `## Recent Conversation
 ${context.conversations.recentMessages.slice(0, 5).map((msg: any) =>
-  `[${msg.direction === 'inbound' ? 'Patient' : 'System'}]: ${msg.content}`
+  `[${msg.direction === 'INBOUND' ? 'Patient' : 'System'}]: ${msg.content}`
 ).join('\n')}
 
 `;

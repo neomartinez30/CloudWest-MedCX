@@ -1,7 +1,7 @@
 import { TextractClient, AnalyzeDocumentCommand, DetectDocumentTextCommand, AnalyzeIDCommand } from '@aws-sdk/client-textract';
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { randomUUID } from 'crypto';
@@ -14,7 +14,6 @@ const lambdaClient = new LambdaClient({});
 const eventBridge = new EventBridgeClient({});
 
 const DOCUMENTS_BUCKET = process.env.DOCUMENTS_BUCKET!;
-const DOCUMENT_TABLE = process.env.DOCUMENT_TABLE!;
 const PATIENT_TABLE = process.env.PATIENT_TABLE!;
 const INSURANCE_VERIFIER_ARN = process.env.INSURANCE_VERIFIER_ARN!;
 const ID_VERIFIER_ARN = process.env.ID_VERIFIER_ARN!;
@@ -71,7 +70,7 @@ export const handler = async (event: any): Promise<any> => {
         return analyzeIdCard(data);
 
       case 'getDocumentStatus':
-        return getDocumentStatus(data.documentId);
+        return getDocumentStatus(data.documentId, data.patientId);
 
       case 'getPatientDocuments':
         return getPatientDocuments(data.patientId);
@@ -126,12 +125,14 @@ async function processDocument(request: DocumentProcessingRequest): Promise<any>
   const documentId = randomUUID();
   const now = new Date().toISOString();
 
-  // Create document record
+  // Create document record in patient table with DOC# prefix
+  const recordType = `DOC#${documentType}#${documentId}`;
   await docClient.send(new PutCommand({
-    TableName: DOCUMENT_TABLE,
+    TableName: PATIENT_TABLE,
     Item: {
-      documentId,
       patientId,
+      recordType,
+      documentId,
       documentType,
       s3Key,
       status: 'processing',
@@ -177,8 +178,8 @@ async function processDocument(request: DocumentProcessingRequest): Promise<any>
 
     // Update document record with results
     await docClient.send(new UpdateCommand({
-      TableName: DOCUMENT_TABLE,
-      Key: { documentId },
+      TableName: PATIENT_TABLE,
+      Key: { patientId, recordType },
       UpdateExpression: 'SET #status = :status, extractedData = :data, verificationResult = :verification, updatedAt = :updated',
       ExpressionAttributeNames: { '#status': 'status' },
       ExpressionAttributeValues: {
@@ -208,8 +209,8 @@ async function processDocument(request: DocumentProcessingRequest): Promise<any>
   } catch (error) {
     // Update with error status
     await docClient.send(new UpdateCommand({
-      TableName: DOCUMENT_TABLE,
-      Key: { documentId },
+      TableName: PATIENT_TABLE,
+      Key: { patientId, recordType },
       UpdateExpression: 'SET #status = :status, errorMessage = :error, updatedAt = :updated',
       ExpressionAttributeNames: { '#status': 'status' },
       ExpressionAttributeValues: {
@@ -389,28 +390,43 @@ async function analyzeForm(s3Key: string): Promise<ExtractedData> {
 /**
  * Get document status
  */
-async function getDocumentStatus(documentId: string): Promise<any> {
-  const result = await docClient.send(new GetCommand({
-    TableName: DOCUMENT_TABLE,
-    Key: { documentId },
+async function getDocumentStatus(documentId: string, patientId?: string): Promise<any> {
+  if (!patientId) {
+    return { error: 'patientId is required to get document status' };
+  }
+
+  // Query for document with DOC# prefix
+  const result = await docClient.send(new QueryCommand({
+    TableName: PATIENT_TABLE,
+    KeyConditionExpression: 'patientId = :patientId AND begins_with(recordType, :prefix)',
+    FilterExpression: 'documentId = :documentId',
+    ExpressionAttributeValues: {
+      ':patientId': patientId,
+      ':prefix': 'DOC#',
+      ':documentId': documentId,
+    },
   }));
 
-  return result.Item || { error: 'Document not found' };
+  return result.Items?.[0] || { error: 'Document not found' };
 }
 
 /**
  * Get patient documents
  */
 async function getPatientDocuments(patientId: string): Promise<any> {
-  // Query using GSI
-  const result = await docClient.send(new GetCommand({
-    TableName: DOCUMENT_TABLE,
-    Key: { patientId },
+  // Query documents with DOC# prefix
+  const result = await docClient.send(new QueryCommand({
+    TableName: PATIENT_TABLE,
+    KeyConditionExpression: 'patientId = :patientId AND begins_with(recordType, :prefix)',
+    ExpressionAttributeValues: {
+      ':patientId': patientId,
+      ':prefix': 'DOC#',
+    },
   }));
 
   return {
     patientId,
-    documents: result.Item ? [result.Item] : [],
+    documents: result.Items || [],
   };
 }
 

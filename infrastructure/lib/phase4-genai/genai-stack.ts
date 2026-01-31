@@ -130,7 +130,9 @@ export class Phase4GenAIStack extends cdk.Stack {
       memorySize: 512,
       environment: {
         ...commonEnvVars,
-        GOOGLE_CALENDAR_SECRET_ARN: foundationStack.googleCalendarSecret.secretArn,
+        AVAILABILITY_TABLE: foundationStack.availabilityTable.tableName,
+        GOOGLE_SECRETS_ARN: foundationStack.googleCalendarSecret.secretArn,
+        CHANNEL_ROUTER_ARN: omnichannelStack.channelRouterFunction.functionArn,
         DEFAULT_APPOINTMENT_DURATION: '30', // minutes
         BUSINESS_HOURS_START: '09:00',
         BUSINESS_HOURS_END: '17:00',
@@ -144,7 +146,9 @@ export class Phase4GenAIStack extends cdk.Stack {
     foundationStack.googleCalendarSecret.grantRead(this.appointmentSchedulerFunction);
     foundationStack.patientTable.grantReadData(this.appointmentSchedulerFunction);
     foundationStack.appointmentTable.grantReadWriteData(this.appointmentSchedulerFunction);
+    foundationStack.availabilityTable.grantReadData(this.appointmentSchedulerFunction);
     foundationStack.eventBus.grantPutEventsTo(this.appointmentSchedulerFunction);
+    omnichannelStack.channelRouterFunction.grantInvoke(this.appointmentSchedulerFunction);
 
     // Update Bedrock function with scheduler ARN
     this.bedrockConversationFunction.addEnvironment(

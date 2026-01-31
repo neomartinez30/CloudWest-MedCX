@@ -175,7 +175,7 @@ async function getPatientContextForCall(contactData: any): Promise<any> {
   const routeResult = await invokeFunction(CHANNEL_ROUTER_ARN, {
     action: 'routeInbound',
     channel: 'voice',
-    direction: 'inbound',
+    direction: 'INBOUND',
     phoneNumber,
     content: 'Voice call initiated',
     metadata: {

@@ -19,6 +19,7 @@ export class Phase1FoundationStack extends cdk.Stack {
   public readonly conversationTable: dynamodb.Table;
   public readonly appointmentTable: dynamodb.Table;
   public readonly interactionTable: dynamodb.Table;
+  public readonly availabilityTable: dynamodb.Table;
   public readonly documentsBucket: s3.Bucket;
   public readonly recordingsBucket: s3.Bucket;
   public readonly encryptionKey: kms.Key;
@@ -219,6 +220,26 @@ export class Phase1FoundationStack extends cdk.Stack {
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
+    // Availability Table - Provider availability for scheduling
+    this.availabilityTable = new dynamodb.Table(this, 'AvailabilityTable', {
+      tableName: `medcx-${envName}-availability`,
+      partitionKey: { name: 'providerId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'availabilityDate', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: this.encryptionKey,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    // GSI: Query availability by date across all providers
+    this.availabilityTable.addGlobalSecondaryIndex({
+      indexName: 'date-index',
+      partitionKey: { name: 'availabilityDate', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'providerId', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
     // ========================================================================
     // S3 Buckets
     // ========================================================================
@@ -360,6 +381,12 @@ export class Phase1FoundationStack extends cdk.Stack {
       value: this.appointmentTable.tableName,
       description: 'Appointment DynamoDB table name',
       exportName: `medcx-${envName}-appointment-table`,
+    });
+
+    new cdk.CfnOutput(this, 'AvailabilityTableName', {
+      value: this.availabilityTable.tableName,
+      description: 'Availability DynamoDB table name',
+      exportName: `medcx-${envName}-availability-table`,
     });
 
     new cdk.CfnOutput(this, 'DocumentsBucketName', {

@@ -21,11 +21,11 @@ const PINPOINT_APP_ID = process.env.PINPOINT_APP_ID!;
 const IDENTITY_RESOLVER_ARN = process.env.IDENTITY_RESOLVER_ARN!;
 const CONVERSATION_MANAGER_ARN = process.env.CONVERSATION_MANAGER_ARN!;
 
-type Channel = 'voice' | 'sms' | 'apple_messages' | 'web_chat';
+type Channel = 'voice' | 'sms' | 'apple_business' | 'web_chat';
 
 interface ChannelMessage {
   channel: Channel;
-  direction: 'inbound' | 'outbound';
+  direction: 'INBOUND' | 'OUTBOUND';
   phoneNumber?: string;
   patientId?: string;
   content: string;
@@ -141,7 +141,7 @@ async function routeInboundMessage(data: ChannelMessage): Promise<any> {
     message: {
       content,
       channel,
-      direction: 'inbound',
+      direction: 'INBOUND',
       messageType: 'text',
       metadata,
     },
@@ -150,7 +150,7 @@ async function routeInboundMessage(data: ChannelMessage): Promise<any> {
   // Record interaction
   await recordInteraction(patientId, {
     channel,
-    direction: 'inbound',
+    direction: 'INBOUND',
     type: 'message',
     threadId,
   });
@@ -160,7 +160,7 @@ async function routeInboundMessage(data: ChannelMessage): Promise<any> {
     patientId,
     threadId,
     channel,
-    direction: 'inbound',
+    direction: 'INBOUND',
     content,
     timestamp: now,
   });
@@ -192,7 +192,7 @@ async function sendOutboundMessage(data: ChannelMessage): Promise<any> {
       result = await sendSMS(targetPhone, content);
       break;
 
-    case 'apple_messages':
+    case 'apple_business':
       result = await sendAppleMessage(targetPhone, content);
       break;
 
@@ -218,14 +218,14 @@ async function sendOutboundMessage(data: ChannelMessage): Promise<any> {
       message: {
         content,
         channel,
-        direction: 'outbound',
+        direction: 'OUTBOUND',
         messageType,
       },
     });
 
     await recordInteraction(patientId, {
       channel,
-      direction: 'outbound',
+      direction: 'OUTBOUND',
       type: 'message',
       threadId: conversationResult.threadId,
     });
@@ -255,7 +255,7 @@ async function handoffToChannel(data: {
       channel: toChannel,
       patientId,
       content: message,
-      direction: 'outbound',
+      direction: 'OUTBOUND',
     });
   }
 
@@ -385,7 +385,7 @@ async function sendAppleMessage(phoneNumber: string, message: string, interactiv
 
   return {
     success: true,
-    channel: 'apple_messages',
+    channel: 'apple_business',
   };
 }
 

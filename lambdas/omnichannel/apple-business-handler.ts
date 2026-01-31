@@ -171,17 +171,17 @@ async function processTextMessage(message: AppleMessage): Promise<any> {
   await logMessage({
     messageId: message.id,
     sourceId: message.sourceId,
-    direction: 'inbound',
+    direction: 'INBOUND',
     content: message.body,
-    channel: 'apple_messages',
+    channel: 'apple_business',
     status: 'received',
   });
 
   // Route through channel router
   await invokeFunction(CHANNEL_ROUTER_ARN, {
     action: 'routeInbound',
-    channel: 'apple_messages',
-    direction: 'inbound',
+    channel: 'apple_business',
+    direction: 'INBOUND',
     phoneNumber: message.sourceId,
     content: message.body,
     metadata: {
@@ -208,9 +208,9 @@ async function processInteractiveResponse(message: AppleMessage): Promise<any> {
   await logMessage({
     messageId: message.id,
     sourceId: message.sourceId,
-    direction: 'inbound',
+    direction: 'INBOUND',
     content: JSON.stringify(interactiveData),
-    channel: 'apple_messages',
+    channel: 'apple_business',
     status: 'received',
     messageType: 'interactive_response',
   });
@@ -218,8 +218,8 @@ async function processInteractiveResponse(message: AppleMessage): Promise<any> {
   // Route through channel router with interactive data
   await invokeFunction(CHANNEL_ROUTER_ARN, {
     action: 'routeInbound',
-    channel: 'apple_messages',
-    direction: 'inbound',
+    channel: 'apple_business',
+    direction: 'INBOUND',
     phoneNumber: message.sourceId,
     content: interactiveData.data?.selectedItem?.title || 'Interactive response',
     metadata: {
@@ -289,9 +289,9 @@ async function sendMessage(data: {
   await logMessage({
     messageId,
     destinationId: data.destinationId,
-    direction: 'outbound',
+    direction: 'OUTBOUND',
     content: data.body,
-    channel: 'apple_messages',
+    channel: 'apple_business',
     status: 'sent',
     patientId: data.patientId,
   });
@@ -342,9 +342,9 @@ async function sendTimePicker(data: {
   await logMessage({
     messageId,
     destinationId: data.destinationId,
-    direction: 'outbound',
+    direction: 'OUTBOUND',
     content: `Time Picker: ${data.title}`,
-    channel: 'apple_messages',
+    channel: 'apple_business',
     status: 'sent',
     messageType: 'time_picker',
     patientId: data.patientId,
@@ -402,9 +402,9 @@ async function sendListPicker(data: {
   await logMessage({
     messageId,
     destinationId: data.destinationId,
-    direction: 'outbound',
+    direction: 'OUTBOUND',
     content: `List Picker: ${data.title}`,
-    channel: 'apple_messages',
+    channel: 'apple_business',
     status: 'sent',
     messageType: 'list_picker',
     patientId: data.patientId,
@@ -445,9 +445,9 @@ async function sendRichLink(data: {
   await logMessage({
     messageId,
     destinationId: data.destinationId,
-    direction: 'outbound',
+    direction: 'OUTBOUND',
     content: `Rich Link: ${data.title} - ${data.url}`,
-    channel: 'apple_messages',
+    channel: 'apple_business',
     status: 'sent',
     messageType: 'rich_link',
     patientId: data.patientId,
@@ -495,9 +495,9 @@ async function sendQuickReplies(data: {
   await logMessage({
     messageId,
     destinationId: data.destinationId,
-    direction: 'outbound',
+    direction: 'OUTBOUND',
     content: `Quick Replies: ${data.title}`,
-    channel: 'apple_messages',
+    channel: 'apple_business',
     status: 'sent',
     messageType: 'quick_replies',
     patientId: data.patientId,
