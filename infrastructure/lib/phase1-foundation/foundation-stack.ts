@@ -7,6 +7,7 @@ import * as kms from 'aws-cdk-lib/aws-kms';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { Construct } from 'constructs';
 
 export interface Phase1FoundationStackProps extends cdk.StackProps {
@@ -19,6 +20,10 @@ export class Phase1FoundationStack extends cdk.Stack {
   public readonly conversationTable: dynamodb.Table;
   public readonly appointmentTable: dynamodb.Table;
   public readonly interactionTable: dynamodb.Table;
+  public readonly availabilityTable: dynamodb.Table;
+  public readonly otpTable: dynamodb.Table;
+  public readonly userPool: cognito.UserPool;
+  public readonly userPoolClient: cognito.UserPoolClient;
   public readonly documentsBucket: s3.Bucket;
   public readonly recordingsBucket: s3.Bucket;
   public readonly encryptionKey: kms.Key;
@@ -219,6 +224,95 @@ export class Phase1FoundationStack extends cdk.Stack {
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
+    // Availability Table - Provider availability for scheduling
+    this.availabilityTable = new dynamodb.Table(this, 'AvailabilityTable', {
+      tableName: `medcx-${envName}-availability`,
+      partitionKey: { name: 'providerId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'availabilityDate', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: this.encryptionKey,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    // GSI: Query availability by date across all providers
+    this.availabilityTable.addGlobalSecondaryIndex({
+      indexName: 'date-index',
+      partitionKey: { name: 'availabilityDate', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'providerId', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // OTP Table - One-time PIN storage for authentication
+    this.otpTable = new dynamodb.Table(this, 'OTPTable', {
+      tableName: `medcx-${envName}-otp`,
+      partitionKey: { name: 'phoneNumber', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: this.encryptionKey,
+      timeToLiveAttribute: 'expiresAt',
+      removalPolicy: cdk.RemovalPolicy.DESTROY, // OTPs are ephemeral
+    });
+
+    // ========================================================================
+    // Cognito User Pool - Patient Authentication
+    // ========================================================================
+    this.userPool = new cognito.UserPool(this, 'PatientUserPool', {
+      userPoolName: `medcx-${envName}-patients`,
+      selfSignUpEnabled: false, // Controlled enrollment via our flow
+      signInAliases: {
+        phone: true,
+        email: true,
+      },
+      autoVerify: {
+        phone: true,
+      },
+      standardAttributes: {
+        phoneNumber: {
+          required: true,
+          mutable: true,
+        },
+        givenName: {
+          required: true,
+          mutable: true,
+        },
+        familyName: {
+          required: true,
+          mutable: true,
+        },
+        email: {
+          required: false,
+          mutable: true,
+        },
+      },
+      customAttributes: {
+        patientId: new cognito.StringAttribute({ mutable: false }),
+        dateOfBirth: new cognito.StringAttribute({ mutable: true }),
+        preferredChannel: new cognito.StringAttribute({ mutable: true }),
+      },
+      passwordPolicy: {
+        minLength: 8,
+        requireLowercase: true,
+        requireUppercase: true,
+        requireDigits: true,
+        requireSymbols: false,
+      },
+      accountRecovery: cognito.AccountRecovery.PHONE_ONLY_WITHOUT_MFA,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    // User Pool Client for Connect/Lambda integration
+    this.userPoolClient = this.userPool.addClient('ConnectClient', {
+      userPoolClientName: `medcx-${envName}-connect-client`,
+      authFlows: {
+        adminUserPassword: true,
+        custom: true,
+      },
+      generateSecret: false,
+      preventUserExistenceErrors: true,
+    });
+
     // ========================================================================
     // S3 Buckets
     // ========================================================================
@@ -362,6 +456,12 @@ export class Phase1FoundationStack extends cdk.Stack {
       exportName: `medcx-${envName}-appointment-table`,
     });
 
+    new cdk.CfnOutput(this, 'AvailabilityTableName', {
+      value: this.availabilityTable.tableName,
+      description: 'Availability DynamoDB table name',
+      exportName: `medcx-${envName}-availability-table`,
+    });
+
     new cdk.CfnOutput(this, 'DocumentsBucketName', {
       value: this.documentsBucket.bucketName,
       description: 'Documents S3 bucket name',
@@ -378,6 +478,24 @@ export class Phase1FoundationStack extends cdk.Stack {
       value: this.encryptionKey.keyArn,
       description: 'KMS encryption key ARN',
       exportName: `medcx-${envName}-encryption-key`,
+    });
+
+    new cdk.CfnOutput(this, 'OTPTableName', {
+      value: this.otpTable.tableName,
+      description: 'OTP DynamoDB table name',
+      exportName: `medcx-${envName}-otp-table`,
+    });
+
+    new cdk.CfnOutput(this, 'UserPoolId', {
+      value: this.userPool.userPoolId,
+      description: 'Cognito User Pool ID',
+      exportName: `medcx-${envName}-user-pool-id`,
+    });
+
+    new cdk.CfnOutput(this, 'UserPoolClientId', {
+      value: this.userPoolClient.userPoolClientId,
+      description: 'Cognito User Pool Client ID',
+      exportName: `medcx-${envName}-user-pool-client-id`,
     });
   }
 }

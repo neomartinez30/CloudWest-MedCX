@@ -161,7 +161,7 @@ async function getChannelMetrics(params: DateRange): Promise<any> {
       byChannel[channel] = { inbound: 0, outbound: 0, total: 0 };
     }
     byChannel[channel].total++;
-    if (interaction.direction === 'inbound') {
+    if (interaction.direction === 'INBOUND') {
       byChannel[channel].inbound++;
     } else {
       byChannel[channel].outbound++;

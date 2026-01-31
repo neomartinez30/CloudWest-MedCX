@@ -178,7 +178,7 @@ async function processInboundSMS(message: InboundSMS): Promise<any> {
   await logMessage({
     messageId: message.inboundMessageId,
     phoneNumber: originationNumber,
-    direction: 'inbound',
+    direction: 'INBOUND',
     content: messageBody,
     channel: 'sms',
     status: 'received',
@@ -188,7 +188,7 @@ async function processInboundSMS(message: InboundSMS): Promise<any> {
   await invokeFunction(CHANNEL_ROUTER_ARN, {
     action: 'routeInbound',
     channel: 'sms',
-    direction: 'inbound',
+    direction: 'INBOUND',
     phoneNumber: originationNumber,
     content: messageBody,
     metadata: {
@@ -243,7 +243,7 @@ async function sendSMS(data: SMSMessage): Promise<any> {
       messageId: response.MessageId || localMessageId,
       localMessageId,
       phoneNumber: normalizedPhone,
-      direction: 'outbound',
+      direction: 'OUTBOUND',
       content: message,
       channel: 'sms',
       status: success ? 'sent' : 'failed',
@@ -270,7 +270,7 @@ async function sendSMS(data: SMSMessage): Promise<any> {
     await logMessage({
       messageId: localMessageId,
       phoneNumber: normalizedPhone,
-      direction: 'outbound',
+      direction: 'OUTBOUND',
       content: message,
       channel: 'sms',
       status: 'failed',
@@ -377,7 +377,7 @@ async function handleOptOut(phoneNumber: string): Promise<any> {
   await logMessage({
     messageId: `optout-${Date.now()}`,
     phoneNumber: normalizedPhone,
-    direction: 'inbound',
+    direction: 'INBOUND',
     content: 'OPT-OUT',
     channel: 'sms',
     status: 'opt-out',
@@ -414,7 +414,7 @@ async function handleOptIn(phoneNumber: string): Promise<any> {
   await logMessage({
     messageId: `optin-${Date.now()}`,
     phoneNumber: normalizedPhone,
-    direction: 'inbound',
+    direction: 'INBOUND',
     content: 'OPT-IN',
     channel: 'sms',
     status: 'opt-in',

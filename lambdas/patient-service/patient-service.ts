@@ -456,7 +456,7 @@ function calculatePatientMetrics(appointments: any[], interactions: any[]): Pati
   // Positive factors
   if (completedAppointments > 0) engagementScore += 20;
   if (interactions.length > 5) engagementScore += 15;
-  if (interactions.some(i => i.type === 'RESPONSE')) engagementScore += 10;
+  if (interactions.some(i => i.interactionType === 'RESPONSE' || i.subType === 'RESPONSE')) engagementScore += 10;
 
   // Negative factors
   if (missedAppointments > 0) engagementScore -= (missedAppointments * 10);

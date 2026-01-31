@@ -360,11 +360,13 @@ async function recordOutreach(patientId: string, campaign: string, step: string)
       patientId,
       interactionTimestamp: new Date().toISOString(),
       interactionId: randomUUID(),
-      interactionType: 'outreach',
+      interactionType: 'OUTREACH',
+      subType: step,
       campaign,
-      step,
       channel: 'sms',
-      direction: 'outbound',
+      direction: 'OUTBOUND',
+      status: 'COMPLETED',
+      createdAt: new Date().toISOString(),
     },
   }));
 }
