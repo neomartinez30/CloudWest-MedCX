@@ -1,20 +1,26 @@
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
-import { PinpointClient, SendMessagesCommand, PhoneNumberValidateCommand } from '@aws-sdk/client-pinpoint';
+import {
+  PinpointSMSVoiceV2Client,
+  SendTextMessageCommand,
+  DescribePhoneNumbersCommand,
+} from '@aws-sdk/client-pinpoint-sms-voice-v2';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { randomUUID } from 'crypto';
 
 const lambdaClient = new LambdaClient({});
-const pinpointClient = new PinpointClient({});
+const smsClient = new PinpointSMSVoiceV2Client({});
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 const eventBridge = new EventBridgeClient({});
 
-const PINPOINT_APP_ID = process.env.PINPOINT_APP_ID!;
 const MESSAGE_LOG_TABLE = process.env.MESSAGE_LOG_TABLE!;
+const PATIENT_TABLE = process.env.PATIENT_TABLE!;
 const CHANNEL_ROUTER_ARN = process.env.CHANNEL_ROUTER_ARN!;
 const EVENT_BUS_NAME = process.env.EVENT_BUS_NAME!;
+const ORIGINATION_IDENTITY = process.env.ORIGINATION_IDENTITY!; // Phone number or Pool ID
+const CONFIGURATION_SET = process.env.CONFIGURATION_SET; // Optional
 
 interface SMSMessage {
   phoneNumber: string;
@@ -33,12 +39,11 @@ interface InboundSMS {
 }
 
 /**
- * SMS Handler Lambda
+ * SMS Handler Lambda - AWS End User Messaging
  *
- * Handles all SMS communications:
- * - Send outbound SMS via Amazon Pinpoint
- * - Process inbound SMS from Pinpoint/SNS
- * - Validate phone numbers
+ * Handles all SMS communications using AWS End User Messaging (Pinpoint SMS Voice V2):
+ * - Send outbound SMS
+ * - Process inbound SMS from SNS
  * - Track delivery status
  * - Support opt-in/opt-out management
  */
@@ -46,9 +51,14 @@ export const handler = async (event: any): Promise<any> => {
   console.log('SMS Handler Event:', JSON.stringify(event, null, 2));
 
   try {
-    // Handle SNS notifications (inbound SMS)
+    // Handle SNS notifications (inbound SMS from End User Messaging)
     if (event.Records?.[0]?.Sns) {
       return handleInboundSNS(event);
+    }
+
+    // Handle SQS messages (from channel router)
+    if (event.Records?.[0]?.eventSource === 'aws:sqs') {
+      return handleSQSMessages(event);
     }
 
     // Handle direct invocations
@@ -61,9 +71,6 @@ export const handler = async (event: any): Promise<any> => {
       case 'sendBulk':
         return sendBulkSMS(data);
 
-      case 'validateNumber':
-        return validatePhoneNumber(data.phoneNumber);
-
       case 'getDeliveryStatus':
         return getDeliveryStatus(data.messageId);
 
@@ -72,6 +79,9 @@ export const handler = async (event: any): Promise<any> => {
 
       case 'handleOptIn':
         return handleOptIn(data.phoneNumber);
+
+      case 'getPhoneNumbers':
+        return getPhoneNumbers();
 
       default:
         return { error: 'Unknown action' };
@@ -86,25 +96,60 @@ export const handler = async (event: any): Promise<any> => {
 };
 
 /**
- * Handle inbound SMS from SNS
+ * Handle SQS messages from channel router
+ */
+async function handleSQSMessages(event: any): Promise<any> {
+  const results = [];
+
+  for (const record of event.Records) {
+    try {
+      const message = JSON.parse(record.body);
+
+      if (message.channel === 'sms' || !message.channel) {
+        const result = await sendSMS({
+          phoneNumber: message.phoneNumber || message.destinationId,
+          message: message.content || message.body || message.message,
+          messageType: message.messageType || 'TRANSACTIONAL',
+          patientId: message.patientId,
+          metadata: message.metadata,
+        });
+        results.push(result);
+      }
+    } catch (error) {
+      console.error('Error processing SQS message:', error);
+      results.push({ error: 'Failed to process message' });
+    }
+  }
+
+  return { processed: results.length, results };
+}
+
+/**
+ * Handle inbound SMS from SNS (End User Messaging webhook)
  */
 async function handleInboundSNS(event: any): Promise<any> {
   const results = [];
 
   for (const record of event.Records) {
-    const message = JSON.parse(record.Sns.Message);
+    const snsMessage = JSON.parse(record.Sns.Message);
 
-    if (message.messageType === 'SMS') {
+    // End User Messaging sends different event types
+    if (snsMessage.eventType === 'TEXT_RECEIVED') {
       const inbound: InboundSMS = {
-        originationNumber: message.originationNumber,
-        destinationNumber: message.destinationNumber,
-        messageBody: message.messageBody,
-        messageKeyword: message.messageKeyword,
-        inboundMessageId: message.inboundMessageId,
+        originationNumber: snsMessage.originationPhoneNumber,
+        destinationNumber: snsMessage.destinationPhoneNumber,
+        messageBody: snsMessage.messageBody,
+        messageKeyword: snsMessage.keyword,
+        inboundMessageId: snsMessage.messageId,
       };
 
       const result = await processInboundSMS(inbound);
       results.push(result);
+    } else if (snsMessage.eventType === 'TEXT_DELIVERED') {
+      // Update delivery status
+      await updateDeliveryStatus(snsMessage.messageId, 'delivered');
+    } else if (snsMessage.eventType === 'TEXT_FAILED') {
+      await updateDeliveryStatus(snsMessage.messageId, 'failed', snsMessage.failureReason);
     }
   }
 
@@ -167,67 +212,78 @@ async function processInboundSMS(message: InboundSMS): Promise<any> {
 }
 
 /**
- * Send outbound SMS
+ * Send outbound SMS using End User Messaging
  */
 async function sendSMS(data: SMSMessage): Promise<any> {
   const { phoneNumber, message, messageType = 'TRANSACTIONAL', patientId, metadata } = data;
-  const messageId = randomUUID();
+  const localMessageId = randomUUID();
 
-  // Validate phone number format
+  // Validate and normalize phone number
   const normalizedPhone = normalizePhoneNumber(phoneNumber);
 
-  const command = new SendMessagesCommand({
-    ApplicationId: PINPOINT_APP_ID,
-    MessageRequest: {
-      Addresses: {
-        [normalizedPhone]: {
-          ChannelType: 'SMS',
-        },
+  try {
+    const command = new SendTextMessageCommand({
+      DestinationPhoneNumber: normalizedPhone,
+      OriginationIdentity: ORIGINATION_IDENTITY,
+      MessageBody: message,
+      MessageType: messageType,
+      ConfigurationSetName: CONFIGURATION_SET,
+      Context: {
+        patientId: patientId || '',
+        localMessageId,
       },
-      MessageConfiguration: {
-        SMSMessage: {
-          Body: message,
-          MessageType: messageType,
-          OriginationNumber: process.env.ORIGINATION_NUMBER,
-        },
-      },
-    },
-  });
+    });
 
-  const response = await pinpointClient.send(command);
-  const result = response.MessageResponse?.Result?.[normalizedPhone];
+    const response = await smsClient.send(command);
 
-  const success = result?.StatusCode === 200;
+    const success = !!response.MessageId;
 
-  // Log the message
-  await logMessage({
-    messageId: result?.MessageId || messageId,
-    phoneNumber: normalizedPhone,
-    direction: 'outbound',
-    content: message,
-    channel: 'sms',
-    status: success ? 'sent' : 'failed',
-    patientId,
-    metadata,
-    deliveryStatus: result?.DeliveryStatus,
-    statusMessage: result?.StatusMessage,
-  });
+    // Log the message
+    await logMessage({
+      messageId: response.MessageId || localMessageId,
+      localMessageId,
+      phoneNumber: normalizedPhone,
+      direction: 'outbound',
+      content: message,
+      channel: 'sms',
+      status: success ? 'sent' : 'failed',
+      patientId,
+      metadata,
+    });
 
-  // Emit event
-  await emitEvent(success ? 'SMSSent' : 'SMSFailed', {
-    messageId: result?.MessageId,
-    phoneNumber: normalizedPhone,
-    patientId,
-    status: result?.DeliveryStatus,
-    timestamp: new Date().toISOString(),
-  });
+    // Emit event
+    await emitEvent(success ? 'SMSSent' : 'SMSFailed', {
+      messageId: response.MessageId,
+      phoneNumber: normalizedPhone,
+      patientId,
+      timestamp: new Date().toISOString(),
+    });
 
-  return {
-    success,
-    messageId: result?.MessageId,
-    deliveryStatus: result?.DeliveryStatus,
-    statusMessage: result?.StatusMessage,
-  };
+    return {
+      success,
+      messageId: response.MessageId,
+      localMessageId,
+    };
+  } catch (error) {
+    console.error('Error sending SMS:', error);
+
+    await logMessage({
+      messageId: localMessageId,
+      phoneNumber: normalizedPhone,
+      direction: 'outbound',
+      content: message,
+      channel: 'sms',
+      status: 'failed',
+      patientId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      localMessageId,
+    };
+  }
 }
 
 /**
@@ -243,6 +299,11 @@ async function sendBulkSMS(data: { messages: SMSMessage[] }): Promise<any> {
       batch.map(msg => sendSMS(msg))
     );
     results.push(...batchResults);
+
+    // Add delay between batches to avoid throttling
+    if (i + batchSize < data.messages.length) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
   }
 
   return {
@@ -250,29 +311,6 @@ async function sendBulkSMS(data: { messages: SMSMessage[] }): Promise<any> {
     sent: results.filter(r => r.success).length,
     failed: results.filter(r => !r.success).length,
     results,
-  };
-}
-
-/**
- * Validate phone number
- */
-async function validatePhoneNumber(phoneNumber: string): Promise<any> {
-  const command = new PhoneNumberValidateCommand({
-    NumberValidateRequest: {
-      PhoneNumber: phoneNumber,
-    },
-  });
-
-  const response = await pinpointClient.send(command);
-  const result = response.NumberValidateResponse;
-
-  return {
-    valid: result?.PhoneType !== 'INVALID',
-    phoneNumber: result?.CleansedPhoneNumberE164,
-    carrier: result?.Carrier,
-    countryCode: result?.CountryCodeIso2,
-    phoneType: result?.PhoneType,
-    timezone: result?.Timezone,
   };
 }
 
@@ -295,10 +333,46 @@ async function getDeliveryStatus(messageId: string): Promise<any> {
 }
 
 /**
+ * Update delivery status from webhook
+ */
+async function updateDeliveryStatus(
+  messageId: string,
+  status: string,
+  failureReason?: string
+): Promise<void> {
+  try {
+    const updateExpression = failureReason
+      ? 'SET deliveryStatus = :status, failureReason = :reason, updatedAt = :updated'
+      : 'SET deliveryStatus = :status, updatedAt = :updated';
+
+    const expressionValues: any = {
+      ':status': status,
+      ':updated': new Date().toISOString(),
+    };
+
+    if (failureReason) {
+      expressionValues[':reason'] = failureReason;
+    }
+
+    await docClient.send(new UpdateCommand({
+      TableName: MESSAGE_LOG_TABLE,
+      Key: { messageId },
+      UpdateExpression: updateExpression,
+      ExpressionAttributeValues: expressionValues,
+    }));
+  } catch (error) {
+    console.error('Error updating delivery status:', error);
+  }
+}
+
+/**
  * Handle opt-out request
  */
 async function handleOptOut(phoneNumber: string): Promise<any> {
   const normalizedPhone = normalizePhoneNumber(phoneNumber);
+
+  // Update patient preferences
+  await updatePatientSMSPreference(normalizedPhone, false);
 
   await logMessage({
     messageId: `optout-${Date.now()}`,
@@ -334,6 +408,9 @@ async function handleOptOut(phoneNumber: string): Promise<any> {
 async function handleOptIn(phoneNumber: string): Promise<any> {
   const normalizedPhone = normalizePhoneNumber(phoneNumber);
 
+  // Update patient preferences
+  await updatePatientSMSPreference(normalizedPhone, true);
+
   await logMessage({
     messageId: `optin-${Date.now()}`,
     phoneNumber: normalizedPhone,
@@ -362,12 +439,56 @@ async function handleOptIn(phoneNumber: string): Promise<any> {
   };
 }
 
+/**
+ * Get available phone numbers
+ */
+async function getPhoneNumbers(): Promise<any> {
+  const command = new DescribePhoneNumbersCommand({});
+  const response = await smsClient.send(command);
+
+  return {
+    phoneNumbers: response.PhoneNumbers?.map(pn => ({
+      phoneNumber: pn.PhoneNumber,
+      status: pn.Status,
+      capabilities: pn.NumberCapabilities,
+      type: pn.NumberType,
+    })) || [],
+  };
+}
+
 // Helper functions
 function normalizePhoneNumber(phone: string): string {
   let digits = phone.replace(/\D/g, '');
   if (digits.length === 10) digits = '1' + digits;
   if (!digits.startsWith('+')) digits = '+' + digits;
   return digits;
+}
+
+async function updatePatientSMSPreference(phoneNumber: string, optedIn: boolean): Promise<void> {
+  try {
+    // Find patient by phone and update preferences
+    const result = await docClient.send(new QueryCommand({
+      TableName: PATIENT_TABLE,
+      IndexName: 'phone-index',
+      KeyConditionExpression: 'phoneNumber = :phone',
+      ExpressionAttributeValues: { ':phone': phoneNumber },
+    }));
+
+    if (result.Items && result.Items.length > 0) {
+      const patient = result.Items[0];
+      await docClient.send(new UpdateCommand({
+        TableName: PATIENT_TABLE,
+        Key: { patientId: patient.patientId, recordType: 'PROFILE' },
+        UpdateExpression: 'SET smsOptedIn = :opted, smsOptUpdatedAt = :updated',
+        ExpressionAttributeValues: {
+          ':opted': optedIn,
+          ':updated': new Date().toISOString(),
+        },
+      }));
+    }
+  } catch (error) {
+    console.error('Error updating patient SMS preference:', error);
+  }
 }
 
 async function logMessage(data: any): Promise<void> {

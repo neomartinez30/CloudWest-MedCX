@@ -116,8 +116,8 @@ export class Phase3OmnichannelStack extends cdk.Stack {
     this.outboundMessageQueue.grantConsumeMessages(this.channelRouterFunction);
 
     // ========================================================================
-    // SMS Handler Lambda (Amazon Pinpoint)
-    // Handles SMS/MMS via Amazon Pinpoint
+    // SMS Handler Lambda (AWS End User Messaging)
+    // Handles SMS/MMS via AWS End User Messaging (Pinpoint SMS Voice V2)
     // ========================================================================
     this.smsHandlerFunction = new nodejs.NodejsFunction(this, 'SmsHandler', {
       functionName: `medcx-${envName}-sms-handler`,
@@ -128,23 +128,24 @@ export class Phase3OmnichannelStack extends cdk.Stack {
       memorySize: 512,
       environment: {
         ...commonEnvVars,
-        PINPOINT_APPLICATION_ID: `medcx-${envName}-pinpoint`, // Will be created manually or via custom resource
-        PINPOINT_ORIGINATION_NUMBER: process.env.PINPOINT_PHONE_NUMBER || '+15551234567',
+        ORIGINATION_IDENTITY: process.env.SMS_ORIGINATION_IDENTITY || 'pool-placeholder', // Phone number or Pool ID
+        CONFIGURATION_SET: process.env.SMS_CONFIGURATION_SET || '', // Optional configuration set
+        MESSAGE_LOG_TABLE: foundationStack.conversationTable.tableName,
       },
       layers: [sharedLayer],
       tracing: lambda.Tracing.ACTIVE,
     });
 
-    // Pinpoint permissions
+    // AWS End User Messaging (SMS Voice V2) permissions
     this.smsHandlerFunction.addToRolePolicy(new iam.PolicyStatement({
       actions: [
-        'mobiletargeting:SendMessages',
-        'mobiletargeting:SendUsersMessages',
-        'mobiletargeting:GetEndpoint',
-        'mobiletargeting:UpdateEndpoint',
-        'mobiletargeting:PutEvents',
+        'sms-voice:SendTextMessage',
+        'sms-voice:SendVoiceMessage',
+        'sms-voice:DescribePhoneNumbers',
+        'sms-voice:DescribePools',
+        'sms-voice:DescribeConfigurationSets',
       ],
-      resources: [`arn:aws:mobiletargeting:${this.region}:${this.account}:apps/*`],
+      resources: ['*'],
     }));
 
     foundationStack.patientTable.grantReadData(this.smsHandlerFunction);
