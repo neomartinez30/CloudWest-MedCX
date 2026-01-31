@@ -1,8 +1,10 @@
-# CloudWest MedCX - Next Generation Medical Contact Center
+# CloudWest MedCX - Next Generation Clinical Contact Center
 
 ## Vision
+**The contact center as a 'relationship hub'**
+**Cost Center > Profit Center**
 
-A futuristic clinical contact center powered by AWS that provides:
+The future of clinical contact centers powered by AWS that provides:
 - **True Omnichannel Experience**: Seamless conversation continuity across voice, SMS, and rich messaging
 - **GenAI-Powered Self-Service**: Intelligent appointment scheduling with context awareness
 - **Patient 360 View**: Operational, real-time patient insights for bots, agents, and workflows
