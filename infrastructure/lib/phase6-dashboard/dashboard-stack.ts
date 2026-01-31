@@ -233,7 +233,7 @@ export class Phase6DashboardStack extends cdk.Stack {
         stageName: envName,
         tracingEnabled: true,
         metricsEnabled: true,
-        loggingLevel: apigateway.MethodLoggingLevel.INFO,
+        loggingLevel: apigateway.MethodLoggingLevel.OFF,
       },
       defaultCorsPreflightOptions: {
         allowOrigins: [

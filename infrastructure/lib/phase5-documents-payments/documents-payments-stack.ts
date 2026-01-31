@@ -311,7 +311,7 @@ export class Phase5DocumentsPaymentsStack extends cdk.Stack {
         stageName: envName,
         tracingEnabled: true,
         metricsEnabled: true,
-        loggingLevel: apigateway.MethodLoggingLevel.INFO,
+        loggingLevel: apigateway.MethodLoggingLevel.OFF,
       },
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,

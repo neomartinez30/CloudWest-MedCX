@@ -325,7 +325,7 @@ export class Phase7MarketingStack extends cdk.Stack {
         stageName: envName,
         tracingEnabled: true,
         metricsEnabled: true,
-        loggingLevel: apigateway.MethodLoggingLevel.INFO,
+        loggingLevel: apigateway.MethodLoggingLevel.OFF,
       },
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
