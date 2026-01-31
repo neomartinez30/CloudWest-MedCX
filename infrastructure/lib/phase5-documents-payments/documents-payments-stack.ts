@@ -3,7 +3,6 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
-import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as logs from 'aws-cdk-lib/aws-logs';
@@ -280,15 +279,27 @@ export class Phase5DocumentsPaymentsStack extends cdk.Stack {
     this.idVerifierFunction.grantInvoke(this.documentProcessingStateMachine);
 
     // ========================================================================
-    // S3 Event Notifications
+    // EventBridge Rule for S3 Document Uploads
+    // Using EventBridge instead of S3 notifications to avoid cyclic dependencies
     // ========================================================================
+    const documentUploadRule = new events.Rule(this, 'DocumentUploadRule', {
+      ruleName: `medcx-${envName}-document-upload`,
+      description: 'Trigger document processing when files are uploaded',
+      eventPattern: {
+        source: ['aws.s3'],
+        detailType: ['Object Created'],
+        detail: {
+          bucket: {
+            name: [foundationStack.documentsBucket.bucketName],
+          },
+          object: {
+            key: [{ prefix: 'uploads/' }],
+          },
+        },
+      },
+    });
 
-    // Trigger document processing when files are uploaded
-    foundationStack.documentsBucket.addEventNotification(
-      s3.EventType.OBJECT_CREATED,
-      new s3n.LambdaDestination(this.documentProcessorFunction),
-      { prefix: 'uploads/' }
-    );
+    documentUploadRule.addTarget(new targets.LambdaFunction(this.documentProcessorFunction));
 
     // ========================================================================
     // Documents & Payments API Gateway

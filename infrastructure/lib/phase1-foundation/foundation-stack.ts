@@ -231,6 +231,7 @@ export class Phase1FoundationStack extends cdk.Stack {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       versioned: true,
       enforceSSL: true,
+      eventBridgeEnabled: true, // Enable EventBridge notifications for cross-stack triggers
       lifecycleRules: [
         {
           id: 'archive-old-documents',
