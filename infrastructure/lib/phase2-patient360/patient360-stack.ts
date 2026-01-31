@@ -21,6 +21,7 @@ export class Phase2Patient360Stack extends cdk.Stack {
   public readonly identityResolverFunction: lambda.Function;
   public readonly patientServiceFunction: lambda.Function;
   public readonly conversationManagerFunction: lambda.Function;
+  public readonly otpHandlerFunction: lambda.Function;
   public readonly careFollowupStateMachine: stepfunctions.StateMachine;
 
   constructor(scope: Construct, id: string, props: Phase2Patient360StackProps) {
@@ -113,6 +114,51 @@ export class Phase2Patient360Stack extends cdk.Stack {
     foundationStack.patientTable.grantReadData(this.conversationManagerFunction);
     foundationStack.interactionTable.grantReadWriteData(this.conversationManagerFunction);
     foundationStack.eventBus.grantPutEventsTo(this.conversationManagerFunction);
+
+    // ========================================================================
+    // OTP Handler Lambda
+    // Phone-based authentication with OTP verification
+    // ========================================================================
+    this.otpHandlerFunction = new nodejs.NodejsFunction(this, 'OTPHandler', {
+      functionName: `medcx-${envName}-otp-handler`,
+      entry: path.join(__dirname, '../../../lambdas/auth/otp-handler.ts'),
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_20_X,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 512,
+      environment: {
+        ...commonEnvVars,
+        OTP_TABLE: foundationStack.otpTable.tableName,
+        COGNITO_USER_POOL_ID: foundationStack.userPool.userPoolId,
+        ORIGINATION_IDENTITY: process.env.SMS_ORIGINATION_IDENTITY || 'PLACEHOLDER',
+      },
+      layers: [sharedLayer],
+      tracing: lambda.Tracing.ACTIVE,
+    });
+
+    // Grant permissions
+    foundationStack.otpTable.grantReadWriteData(this.otpHandlerFunction);
+    foundationStack.patientTable.grantReadWriteData(this.otpHandlerFunction);
+    foundationStack.eventBus.grantPutEventsTo(this.otpHandlerFunction);
+
+    // Cognito admin permissions
+    this.otpHandlerFunction.addToRolePolicy(new iam.PolicyStatement({
+      actions: [
+        'cognito-idp:AdminCreateUser',
+        'cognito-idp:AdminGetUser',
+        'cognito-idp:AdminSetUserPassword',
+        'cognito-idp:AdminUpdateUserAttributes',
+      ],
+      resources: [foundationStack.userPool.userPoolArn],
+    }));
+
+    // SMS sending permissions (Pinpoint SMS Voice V2)
+    this.otpHandlerFunction.addToRolePolicy(new iam.PolicyStatement({
+      actions: [
+        'sms-voice:SendTextMessage',
+      ],
+      resources: ['*'],
+    }));
 
     // ========================================================================
     // Patient 360 API Gateway
@@ -357,6 +403,12 @@ export class Phase2Patient360Stack extends cdk.Stack {
       value: this.conversationManagerFunction.functionArn,
       description: 'Conversation Manager Lambda ARN',
       exportName: `medcx-${envName}-conversation-manager-arn`,
+    });
+
+    new cdk.CfnOutput(this, 'OTPHandlerArn', {
+      value: this.otpHandlerFunction.functionArn,
+      description: 'OTP Handler Lambda ARN',
+      exportName: `medcx-${envName}-otp-handler-arn`,
     });
   }
 }

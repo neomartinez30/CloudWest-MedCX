@@ -5,9 +5,11 @@
     "entryPointPosition": {"x": 20, "y": 20},
     "ActionMetadata": {
       "Welcome": {"position": {"x": 180, "y": 20}},
-      "InvokeLambdaIdentity": {"position": {"x": 420, "y": 20}},
-      "SetContactAttributes": {"position": {"x": 660, "y": 20}},
-      "PersonalizedGreeting": {"position": {"x": 900, "y": 20}},
+      "TransferToAuth": {"position": {"x": 420, "y": 20}},
+      "CheckAuthResult": {"position": {"x": 660, "y": 20}},
+      "SetAuthenticatedAttributes": {"position": {"x": 900, "y": 20}},
+      "PersonalizedGreeting": {"position": {"x": 1140, "y": 20}},
+      "NewPatientGreeting": {"position": {"x": 900, "y": 150}},
       "ConversationLoop": {"position": {"x": 180, "y": 200}},
       "CheckAction": {"position": {"x": 420, "y": 200}},
       "ContinueConversation": {"position": {"x": 660, "y": 200}},
@@ -20,6 +22,7 @@
       "PlaySMSConfirmation": {"position": {"x": 420, "y": 560}},
       "PlayHoldMessage": {"position": {"x": 660, "y": 560}},
       "PlayError": {"position": {"x": 900, "y": 560}},
+      "AuthFailed": {"position": {"x": 660, "y": 150}},
       "DisconnectHangup": {"position": {"x": 180, "y": 740}},
       "EndCall": {"position": {"x": 420, "y": 740}}
     }
@@ -32,39 +35,77 @@
         "Text": "Thank you for calling CloudWest Medical Center."
       },
       "Transitions": {
-        "NextAction": "InvokeLambdaIdentity",
+        "NextAction": "TransferToAuth",
         "Errors": [
-          {"NextAction": "PersonalizedGreeting", "ErrorType": "NoMatchingError"}
+          {"NextAction": "TransferToAuth", "ErrorType": "NoMatchingError"}
         ]
       }
     },
     {
-      "Identifier": "InvokeLambdaIdentity",
-      "Type": "InvokeLambdaFunction",
+      "Identifier": "TransferToAuth",
+      "Type": "TransferToFlow",
       "Parameters": {
-        "LambdaFunctionARN": "REPLACE_WITH_IDENTITY_RESOLVER_ARN",
-        "InvocationTimeLimitSeconds": "8",
-        "LambdaInvocationAttributes": {
-          "action": "resolveByPhone",
-          "phoneNumber": "$.CustomerEndpoint.Address"
-        }
+        "ContactFlowId": "${AuthenticationFlowId}"
       },
       "Transitions": {
-        "NextAction": "SetContactAttributes",
+        "NextAction": "CheckAuthResult",
         "Errors": [
-          {"NextAction": "PersonalizedGreeting", "ErrorType": "NoMatchingError"}
+          {"NextAction": "AuthFailed", "ErrorType": "NoMatchingError"}
         ]
       }
     },
     {
-      "Identifier": "SetContactAttributes",
+      "Identifier": "CheckAuthResult",
+      "Type": "Compare",
+      "Parameters": {
+        "ComparisonValue": "$.Attributes.isAuthenticated"
+      },
+      "Conditions": [
+        {
+          "NextAction": "CheckNewEnrollment",
+          "Condition": {
+            "Operator": "Equals",
+            "Operands": ["true"]
+          }
+        },
+        {
+          "NextAction": "AuthFailed",
+          "Condition": {
+            "Operator": "Equals",
+            "Operands": ["false"]
+          }
+        }
+      ],
+      "Default": {
+        "NextAction": "AuthFailed"
+      }
+    },
+    {
+      "Identifier": "CheckNewEnrollment",
+      "Type": "Compare",
+      "Parameters": {
+        "ComparisonValue": "$.Attributes.isNewEnrollment"
+      },
+      "Conditions": [
+        {
+          "NextAction": "NewPatientGreeting",
+          "Condition": {
+            "Operator": "Equals",
+            "Operands": ["true"]
+          }
+        }
+      ],
+      "Default": {
+        "NextAction": "SetAuthenticatedAttributes"
+      }
+    },
+    {
+      "Identifier": "SetAuthenticatedAttributes",
       "Type": "UpdateContactAttributes",
       "Parameters": {
         "Attributes": {
-          "patientId": "$.External.patientId",
-          "patientName": "$.External.firstName",
-          "isNewPatient": "$.External.isNewPatient",
-          "conversationHistory": "[]"
+          "conversationHistory": "[]",
+          "authVerified": "true"
         }
       },
       "Transitions": {
@@ -78,12 +119,55 @@
       "Identifier": "PersonalizedGreeting",
       "Type": "MessageParticipant",
       "Parameters": {
-        "Text": "Hi $.Attributes.patientName! I'm your virtual assistant powered by AI. How can I help you today?"
+        "Text": "Welcome back, $.Attributes.patientName! Your identity has been verified. I'm your virtual assistant powered by AI. How can I help you today?"
       },
       "Transitions": {
         "NextAction": "ConversationLoop",
         "Errors": [
           {"NextAction": "ConversationLoop", "ErrorType": "NoMatchingError"}
+        ]
+      }
+    },
+    {
+      "Identifier": "NewPatientGreeting",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "Text": "Welcome to CloudWest Medical, $.Attributes.patientName! We're excited to have you as a new patient. I'm your virtual assistant powered by AI. How can I help you get started today? You can schedule an appointment, ask questions about our services, or speak with a team member."
+      },
+      "Transitions": {
+        "NextAction": "SetNewPatientAttributes",
+        "Errors": [
+          {"NextAction": "ConversationLoop", "ErrorType": "NoMatchingError"}
+        ]
+      }
+    },
+    {
+      "Identifier": "SetNewPatientAttributes",
+      "Type": "UpdateContactAttributes",
+      "Parameters": {
+        "Attributes": {
+          "conversationHistory": "[]",
+          "authVerified": "true",
+          "isFirstCall": "true"
+        }
+      },
+      "Transitions": {
+        "NextAction": "ConversationLoop",
+        "Errors": [
+          {"NextAction": "ConversationLoop", "ErrorType": "NoMatchingError"}
+        ]
+      }
+    },
+    {
+      "Identifier": "AuthFailed",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "Text": "I wasn't able to verify your identity. Let me connect you with one of our team members who can assist you."
+      },
+      "Transitions": {
+        "NextAction": "TransferToQueueAction",
+        "Errors": [
+          {"NextAction": "TransferToQueueAction", "ErrorType": "NoMatchingError"}
         ]
       }
     },
@@ -100,7 +184,9 @@
           "patientId": "$.Attributes.patientId",
           "patientName": "$.Attributes.patientName",
           "phoneNumber": "$.CustomerEndpoint.Address",
-          "channel": "voice"
+          "channel": "voice",
+          "isAuthenticated": "$.Attributes.isAuthenticated",
+          "isNewPatient": "$.Attributes.isNewEnrollment"
         }
       },
       "Transitions": {
@@ -262,7 +348,7 @@
       "Identifier": "SendSMSLink",
       "Type": "InvokeLambdaFunction",
       "Parameters": {
-        "LambdaFunctionARN": "REPLACE_WITH_CHANNEL_ROUTER_ARN",
+        "LambdaFunctionARN": "${ChannelRouterArn}",
         "InvocationTimeLimitSeconds": "8",
         "LambdaInvocationAttributes": {
           "action": "sendHandoffSMS",
@@ -324,7 +410,7 @@
       "Identifier": "TransferToQueueAction",
       "Type": "TransferContactToQueue",
       "Parameters": {
-        "QueueId": "REPLACE_WITH_QUEUE_ARN"
+        "QueueId": "${DefaultQueueId}"
       },
       "Transitions": {
         "NextAction": "PlayHoldMessage",

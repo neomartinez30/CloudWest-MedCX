@@ -1,0 +1,369 @@
+{
+  "Version": "2019-10-30",
+  "StartAction": "WelcomeAuth",
+  "Metadata": {
+    "entryPointPosition": { "x": 40, "y": 40 },
+    "ActionMetadata": {
+      "WelcomeAuth": { "position": { "x": 160, "y": 40 } },
+      "InvokeLookupPhone": { "position": { "x": 400, "y": 40 } },
+      "CheckPhoneFound": { "position": { "x": 640, "y": 40 } },
+      "SendOTP": { "position": { "x": 880, "y": 40 } },
+      "PromptForOTP": { "position": { "x": 1120, "y": 40 } },
+      "VerifyOTP": { "position": { "x": 1360, "y": 40 } },
+      "CheckOTPResult": { "position": { "x": 1600, "y": 40 } },
+      "AuthSuccess": { "position": { "x": 1840, "y": 40 } },
+      "SetAuthAttributes": { "position": { "x": 2080, "y": 40 } },
+      "ReturnSuccess": { "position": { "x": 2320, "y": 40 } },
+      "OTPFailed": { "position": { "x": 1600, "y": 200 } },
+      "CheckRetryOTP": { "position": { "x": 1360, "y": 200 } },
+      "MaxAttemptsReached": { "position": { "x": 1120, "y": 320 } },
+      "PhoneNotFound": { "position": { "x": 640, "y": 200 } },
+      "TransferToEnrollment": { "position": { "x": 880, "y": 200 } },
+      "ErrorHandler": { "position": { "x": 400, "y": 320 } }
+    }
+  },
+  "Actions": [
+    {
+      "Identifier": "WelcomeAuth",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "Text": "Welcome to CloudWest Medical. For your security, we need to verify your identity."
+      },
+      "Transitions": {
+        "NextAction": "InvokeLookupPhone",
+        "Errors": [
+          { "NextAction": "ErrorHandler", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "InvokeLookupPhone",
+      "Type": "InvokeLambdaFunction",
+      "Parameters": {
+        "LambdaFunctionARN": "${OTPHandlerArn}",
+        "InvocationTimeLimitSeconds": "8",
+        "LambdaInvocationAttributes": {
+          "action": "checkPhoneNumber",
+          "phoneNumber": "$.CustomerEndpoint.Address"
+        }
+      },
+      "Transitions": {
+        "NextAction": "CheckPhoneFound",
+        "Errors": [
+          { "NextAction": "ErrorHandler", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "CheckPhoneFound",
+      "Type": "Compare",
+      "Parameters": {
+        "ComparisonValue": "$.External.found"
+      },
+      "Conditions": [
+        {
+          "NextAction": "SendOTP",
+          "Condition": {
+            "Operator": "Equals",
+            "Operands": ["true"]
+          }
+        },
+        {
+          "NextAction": "PhoneNotFound",
+          "Condition": {
+            "Operator": "Equals",
+            "Operands": ["false"]
+          }
+        }
+      ],
+      "Default": {
+        "NextAction": "PhoneNotFound"
+      }
+    },
+    {
+      "Identifier": "SendOTP",
+      "Type": "InvokeLambdaFunction",
+      "Parameters": {
+        "LambdaFunctionARN": "${OTPHandlerArn}",
+        "InvocationTimeLimitSeconds": "10",
+        "LambdaInvocationAttributes": {
+          "action": "generateOTP",
+          "phoneNumber": "$.CustomerEndpoint.Address",
+          "patientId": "$.External.patientId"
+        }
+      },
+      "Transitions": {
+        "NextAction": "PromptForOTP",
+        "Errors": [
+          { "NextAction": "ErrorHandler", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "PromptForOTP",
+      "Type": "GetParticipantInput",
+      "Parameters": {
+        "Text": "We've sent a 6-digit verification code to your phone. Please enter the code now using your keypad.",
+        "InputTimeLimitSeconds": "30",
+        "DTMFConfiguration": {
+          "InputTerminationSequence": "#",
+          "DisableCancelKey": false
+        },
+        "InputValidation": {
+          "CustomValidation": {
+            "MaximumLength": "6"
+          }
+        }
+      },
+      "Transitions": {
+        "NextAction": "VerifyOTP",
+        "Conditions": [
+          {
+            "NextAction": "VerifyOTP",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": ["Timeout"]
+            }
+          }
+        ],
+        "Errors": [
+          { "NextAction": "OTPFailed", "ErrorType": "NoMatchingError" },
+          { "NextAction": "OTPFailed", "ErrorType": "InputTimeLimitExceeded" }
+        ]
+      }
+    },
+    {
+      "Identifier": "VerifyOTP",
+      "Type": "InvokeLambdaFunction",
+      "Parameters": {
+        "LambdaFunctionARN": "${OTPHandlerArn}",
+        "InvocationTimeLimitSeconds": "8",
+        "LambdaInvocationAttributes": {
+          "action": "verifyOTP",
+          "phoneNumber": "$.CustomerEndpoint.Address",
+          "otp": "$.StoredCustomerInput"
+        }
+      },
+      "Transitions": {
+        "NextAction": "CheckOTPResult",
+        "Errors": [
+          { "NextAction": "ErrorHandler", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "CheckOTPResult",
+      "Type": "Compare",
+      "Parameters": {
+        "ComparisonValue": "$.External.verified"
+      },
+      "Conditions": [
+        {
+          "NextAction": "AuthSuccess",
+          "Condition": {
+            "Operator": "Equals",
+            "Operands": ["true"]
+          }
+        },
+        {
+          "NextAction": "CheckRetryOTP",
+          "Condition": {
+            "Operator": "Equals",
+            "Operands": ["false"]
+          }
+        }
+      ],
+      "Default": {
+        "NextAction": "OTPFailed"
+      }
+    },
+    {
+      "Identifier": "AuthSuccess",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "Text": "Thank you. Your identity has been verified."
+      },
+      "Transitions": {
+        "NextAction": "SetAuthAttributes",
+        "Errors": [
+          { "NextAction": "SetAuthAttributes", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "SetAuthAttributes",
+      "Type": "UpdateContactAttributes",
+      "Parameters": {
+        "Attributes": {
+          "isAuthenticated": "true",
+          "patientId": "$.External.patientId",
+          "authMethod": "OTP",
+          "authTimestamp": "$.SystemEndpoint.Address"
+        }
+      },
+      "Transitions": {
+        "NextAction": "ReturnSuccess",
+        "Errors": [
+          { "NextAction": "ReturnSuccess", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "ReturnSuccess",
+      "Type": "TransferToFlow",
+      "Parameters": {
+        "ContactFlowId": "${MainFlowId}",
+        "Attributes": {
+          "authResult": "SUCCESS",
+          "patientId": "$.Attributes.patientId"
+        }
+      },
+      "Transitions": {
+        "Errors": [
+          { "NextAction": "ErrorHandler", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "CheckRetryOTP",
+      "Type": "Compare",
+      "Parameters": {
+        "ComparisonValue": "$.External.error"
+      },
+      "Conditions": [
+        {
+          "NextAction": "MaxAttemptsReached",
+          "Condition": {
+            "Operator": "Equals",
+            "Operands": ["MAX_ATTEMPTS_EXCEEDED"]
+          }
+        },
+        {
+          "NextAction": "MaxAttemptsReached",
+          "Condition": {
+            "Operator": "Equals",
+            "Operands": ["OTP_EXPIRED"]
+          }
+        }
+      ],
+      "Default": {
+        "NextAction": "OTPFailed"
+      }
+    },
+    {
+      "Identifier": "OTPFailed",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "Text": "$.External.message"
+      },
+      "Transitions": {
+        "NextAction": "PromptForOTP",
+        "Errors": [
+          { "NextAction": "PromptForOTP", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "MaxAttemptsReached",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "Text": "You have exceeded the maximum number of attempts. For security reasons, please call back to try again or speak with an agent."
+      },
+      "Transitions": {
+        "NextAction": "TransferToAgent",
+        "Errors": [
+          { "NextAction": "ErrorHandler", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "TransferToAgent",
+      "Type": "TransferToQueue",
+      "Parameters": {
+        "QueueId": "${DefaultQueueId}",
+        "Attributes": {
+          "authResult": "FAILED",
+          "reason": "MAX_ATTEMPTS"
+        }
+      },
+      "Transitions": {
+        "Errors": [
+          { "NextAction": "ErrorHandler", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "PhoneNotFound",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "Text": "We don't have your phone number on file. Would you like to create a new account? Press 1 for yes, or 2 to speak with an agent."
+      },
+      "Transitions": {
+        "NextAction": "GetEnrollmentChoice",
+        "Errors": [
+          { "NextAction": "ErrorHandler", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "GetEnrollmentChoice",
+      "Type": "GetParticipantInput",
+      "Parameters": {
+        "Text": "",
+        "InputTimeLimitSeconds": "10",
+        "DTMFConfiguration": {
+          "InputTerminationSequence": "#",
+          "DisableCancelKey": false
+        }
+      },
+      "Transitions": {
+        "NextAction": "TransferToAgent",
+        "Conditions": [
+          {
+            "NextAction": "TransferToEnrollment",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": ["1"]
+            }
+          },
+          {
+            "NextAction": "TransferToAgent",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": ["2"]
+            }
+          }
+        ],
+        "Errors": [
+          { "NextAction": "TransferToAgent", "ErrorType": "NoMatchingError" },
+          { "NextAction": "TransferToAgent", "ErrorType": "InputTimeLimitExceeded" }
+        ]
+      }
+    },
+    {
+      "Identifier": "TransferToEnrollment",
+      "Type": "TransferToFlow",
+      "Parameters": {
+        "ContactFlowId": "${EnrollmentFlowId}"
+      },
+      "Transitions": {
+        "Errors": [
+          { "NextAction": "ErrorHandler", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "ErrorHandler",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "Text": "We're experiencing technical difficulties. Please hold while we connect you with an agent."
+      },
+      "Transitions": {
+        "NextAction": "TransferToAgent",
+        "Errors": [
+          { "NextAction": "TransferToAgent", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    }
+  ]
+}

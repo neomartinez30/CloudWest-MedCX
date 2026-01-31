@@ -1,0 +1,497 @@
+{
+  "Version": "2019-10-30",
+  "StartAction": "WelcomeEnrollment",
+  "Metadata": {
+    "entryPointPosition": { "x": 40, "y": 40 },
+    "ActionMetadata": {
+      "WelcomeEnrollment": { "position": { "x": 160, "y": 40 } },
+      "GetFirstName": { "position": { "x": 400, "y": 40 } },
+      "ConfirmFirstName": { "position": { "x": 640, "y": 40 } },
+      "GetLastName": { "position": { "x": 880, "y": 40 } },
+      "ConfirmLastName": { "position": { "x": 1120, "y": 40 } },
+      "GetDateOfBirth": { "position": { "x": 1360, "y": 40 } },
+      "ConfirmDOB": { "position": { "x": 1600, "y": 40 } },
+      "SendEnrollmentOTP": { "position": { "x": 1840, "y": 40 } },
+      "GetEnrollmentOTP": { "position": { "x": 2080, "y": 40 } },
+      "VerifyEnrollmentOTP": { "position": { "x": 2320, "y": 40 } },
+      "CheckEnrollmentOTP": { "position": { "x": 2560, "y": 40 } },
+      "CreateAccount": { "position": { "x": 2800, "y": 40 } },
+      "EnrollmentSuccess": { "position": { "x": 3040, "y": 40 } },
+      "SetEnrollmentAttributes": { "position": { "x": 3280, "y": 40 } },
+      "ReturnToMain": { "position": { "x": 3520, "y": 40 } },
+      "EnrollmentOTPFailed": { "position": { "x": 2320, "y": 200 } },
+      "EnrollmentError": { "position": { "x": 2800, "y": 200 } },
+      "TransferToAgent": { "position": { "x": 400, "y": 320 } }
+    }
+  },
+  "Actions": [
+    {
+      "Identifier": "WelcomeEnrollment",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "Text": "Great! Let's set up your CloudWest Medical account. This will only take a minute. I'll need to collect some basic information."
+      },
+      "Transitions": {
+        "NextAction": "GetFirstName",
+        "Errors": [
+          { "NextAction": "TransferToAgent", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "GetFirstName",
+      "Type": "GetParticipantInput",
+      "Parameters": {
+        "Text": "Please say or spell your first name after the tone.",
+        "InputTimeLimitSeconds": "15",
+        "Media": {
+          "Uri": "$.SystemEndpoint.Address",
+          "SourceType": "S3",
+          "MediaType": "Audio"
+        },
+        "SpeechRecognition": {
+          "SpeechRecognitionEnabled": true
+        }
+      },
+      "Transitions": {
+        "NextAction": "StoreFirstName",
+        "Errors": [
+          { "NextAction": "GetFirstName", "ErrorType": "InputTimeLimitExceeded" },
+          { "NextAction": "TransferToAgent", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "StoreFirstName",
+      "Type": "UpdateContactAttributes",
+      "Parameters": {
+        "Attributes": {
+          "enrollFirstName": "$.StoredCustomerInput"
+        }
+      },
+      "Transitions": {
+        "NextAction": "ConfirmFirstName",
+        "Errors": [
+          { "NextAction": "ConfirmFirstName", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "ConfirmFirstName",
+      "Type": "GetParticipantInput",
+      "Parameters": {
+        "Text": "I heard $.Attributes.enrollFirstName. Press 1 if that's correct, or press 2 to try again.",
+        "InputTimeLimitSeconds": "10",
+        "DTMFConfiguration": {
+          "InputTerminationSequence": "#",
+          "DisableCancelKey": false
+        }
+      },
+      "Transitions": {
+        "NextAction": "GetLastName",
+        "Conditions": [
+          {
+            "NextAction": "GetLastName",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": ["1"]
+            }
+          },
+          {
+            "NextAction": "GetFirstName",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": ["2"]
+            }
+          }
+        ],
+        "Errors": [
+          { "NextAction": "GetLastName", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "GetLastName",
+      "Type": "GetParticipantInput",
+      "Parameters": {
+        "Text": "Now, please say or spell your last name.",
+        "InputTimeLimitSeconds": "15",
+        "SpeechRecognition": {
+          "SpeechRecognitionEnabled": true
+        }
+      },
+      "Transitions": {
+        "NextAction": "StoreLastName",
+        "Errors": [
+          { "NextAction": "GetLastName", "ErrorType": "InputTimeLimitExceeded" },
+          { "NextAction": "TransferToAgent", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "StoreLastName",
+      "Type": "UpdateContactAttributes",
+      "Parameters": {
+        "Attributes": {
+          "enrollLastName": "$.StoredCustomerInput"
+        }
+      },
+      "Transitions": {
+        "NextAction": "ConfirmLastName",
+        "Errors": [
+          { "NextAction": "ConfirmLastName", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "ConfirmLastName",
+      "Type": "GetParticipantInput",
+      "Parameters": {
+        "Text": "I heard $.Attributes.enrollLastName. Press 1 if that's correct, or press 2 to try again.",
+        "InputTimeLimitSeconds": "10",
+        "DTMFConfiguration": {
+          "InputTerminationSequence": "#",
+          "DisableCancelKey": false
+        }
+      },
+      "Transitions": {
+        "NextAction": "GetDateOfBirth",
+        "Conditions": [
+          {
+            "NextAction": "GetDateOfBirth",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": ["1"]
+            }
+          },
+          {
+            "NextAction": "GetLastName",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": ["2"]
+            }
+          }
+        ],
+        "Errors": [
+          { "NextAction": "GetDateOfBirth", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "GetDateOfBirth",
+      "Type": "GetParticipantInput",
+      "Parameters": {
+        "Text": "Please enter your date of birth using your keypad in the format month, month, day, day, year, year, year, year. For example, January 15th, 1980 would be 0 1 1 5 1 9 8 0.",
+        "InputTimeLimitSeconds": "20",
+        "DTMFConfiguration": {
+          "InputTerminationSequence": "#",
+          "DisableCancelKey": false
+        },
+        "InputValidation": {
+          "CustomValidation": {
+            "MaximumLength": "8"
+          }
+        }
+      },
+      "Transitions": {
+        "NextAction": "StoreDOB",
+        "Errors": [
+          { "NextAction": "GetDateOfBirth", "ErrorType": "InputTimeLimitExceeded" },
+          { "NextAction": "TransferToAgent", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "StoreDOB",
+      "Type": "UpdateContactAttributes",
+      "Parameters": {
+        "Attributes": {
+          "enrollDOB": "$.StoredCustomerInput"
+        }
+      },
+      "Transitions": {
+        "NextAction": "ConfirmDOB",
+        "Errors": [
+          { "NextAction": "ConfirmDOB", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "ConfirmDOB",
+      "Type": "GetParticipantInput",
+      "Parameters": {
+        "Text": "You entered $.Attributes.enrollDOB as your date of birth. Press 1 if that's correct, or press 2 to try again.",
+        "InputTimeLimitSeconds": "10",
+        "DTMFConfiguration": {
+          "InputTerminationSequence": "#",
+          "DisableCancelKey": false
+        }
+      },
+      "Transitions": {
+        "NextAction": "SendEnrollmentOTP",
+        "Conditions": [
+          {
+            "NextAction": "SendEnrollmentOTP",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": ["1"]
+            }
+          },
+          {
+            "NextAction": "GetDateOfBirth",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": ["2"]
+            }
+          }
+        ],
+        "Errors": [
+          { "NextAction": "SendEnrollmentOTP", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "SendEnrollmentOTP",
+      "Type": "InvokeLambdaFunction",
+      "Parameters": {
+        "LambdaFunctionARN": "${OTPHandlerArn}",
+        "InvocationTimeLimitSeconds": "10",
+        "LambdaInvocationAttributes": {
+          "action": "generateOTP",
+          "phoneNumber": "$.CustomerEndpoint.Address"
+        }
+      },
+      "Transitions": {
+        "NextAction": "GetEnrollmentOTP",
+        "Errors": [
+          { "NextAction": "TransferToAgent", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "GetEnrollmentOTP",
+      "Type": "GetParticipantInput",
+      "Parameters": {
+        "Text": "To verify your phone number, we've sent a 6-digit code to your phone. Please enter the code using your keypad.",
+        "InputTimeLimitSeconds": "30",
+        "DTMFConfiguration": {
+          "InputTerminationSequence": "#",
+          "DisableCancelKey": false
+        },
+        "InputValidation": {
+          "CustomValidation": {
+            "MaximumLength": "6"
+          }
+        }
+      },
+      "Transitions": {
+        "NextAction": "VerifyEnrollmentOTP",
+        "Errors": [
+          { "NextAction": "EnrollmentOTPFailed", "ErrorType": "InputTimeLimitExceeded" },
+          { "NextAction": "EnrollmentOTPFailed", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "VerifyEnrollmentOTP",
+      "Type": "InvokeLambdaFunction",
+      "Parameters": {
+        "LambdaFunctionARN": "${OTPHandlerArn}",
+        "InvocationTimeLimitSeconds": "8",
+        "LambdaInvocationAttributes": {
+          "action": "verifyOTP",
+          "phoneNumber": "$.CustomerEndpoint.Address",
+          "otp": "$.StoredCustomerInput"
+        }
+      },
+      "Transitions": {
+        "NextAction": "CheckEnrollmentOTP",
+        "Errors": [
+          { "NextAction": "TransferToAgent", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "CheckEnrollmentOTP",
+      "Type": "Compare",
+      "Parameters": {
+        "ComparisonValue": "$.External.verified"
+      },
+      "Conditions": [
+        {
+          "NextAction": "CreateAccount",
+          "Condition": {
+            "Operator": "Equals",
+            "Operands": ["true"]
+          }
+        },
+        {
+          "NextAction": "EnrollmentOTPFailed",
+          "Condition": {
+            "Operator": "Equals",
+            "Operands": ["false"]
+          }
+        }
+      ],
+      "Default": {
+        "NextAction": "EnrollmentOTPFailed"
+      }
+    },
+    {
+      "Identifier": "CreateAccount",
+      "Type": "InvokeLambdaFunction",
+      "Parameters": {
+        "LambdaFunctionARN": "${OTPHandlerArn}",
+        "InvocationTimeLimitSeconds": "15",
+        "LambdaInvocationAttributes": {
+          "action": "enrollUser",
+          "phoneNumber": "$.CustomerEndpoint.Address",
+          "firstName": "$.Attributes.enrollFirstName",
+          "lastName": "$.Attributes.enrollLastName",
+          "dateOfBirth": "$.Attributes.enrollDOB"
+        }
+      },
+      "Transitions": {
+        "NextAction": "CheckEnrollmentResult",
+        "Errors": [
+          { "NextAction": "EnrollmentError", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "CheckEnrollmentResult",
+      "Type": "Compare",
+      "Parameters": {
+        "ComparisonValue": "$.External.success"
+      },
+      "Conditions": [
+        {
+          "NextAction": "EnrollmentSuccess",
+          "Condition": {
+            "Operator": "Equals",
+            "Operands": ["true"]
+          }
+        }
+      ],
+      "Default": {
+        "NextAction": "EnrollmentError"
+      }
+    },
+    {
+      "Identifier": "EnrollmentSuccess",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "Text": "Congratulations $.External.firstName! Your CloudWest Medical account has been created successfully. Your patient ID is $.External.patientId. You can now access all of our services."
+      },
+      "Transitions": {
+        "NextAction": "SetEnrollmentAttributes",
+        "Errors": [
+          { "NextAction": "SetEnrollmentAttributes", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "SetEnrollmentAttributes",
+      "Type": "UpdateContactAttributes",
+      "Parameters": {
+        "Attributes": {
+          "isAuthenticated": "true",
+          "isNewEnrollment": "true",
+          "patientId": "$.External.patientId",
+          "patientName": "$.External.firstName",
+          "authMethod": "ENROLLMENT"
+        }
+      },
+      "Transitions": {
+        "NextAction": "ReturnToMain",
+        "Errors": [
+          { "NextAction": "ReturnToMain", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "ReturnToMain",
+      "Type": "TransferToFlow",
+      "Parameters": {
+        "ContactFlowId": "${MainFlowId}",
+        "Attributes": {
+          "authResult": "SUCCESS",
+          "patientId": "$.Attributes.patientId",
+          "isNewEnrollment": "true"
+        }
+      },
+      "Transitions": {
+        "Errors": [
+          { "NextAction": "TransferToAgent", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "EnrollmentOTPFailed",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "Text": "$.External.message"
+      },
+      "Transitions": {
+        "NextAction": "CheckOTPRetry",
+        "Errors": [
+          { "NextAction": "GetEnrollmentOTP", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "CheckOTPRetry",
+      "Type": "Compare",
+      "Parameters": {
+        "ComparisonValue": "$.External.error"
+      },
+      "Conditions": [
+        {
+          "NextAction": "TransferToAgent",
+          "Condition": {
+            "Operator": "Equals",
+            "Operands": ["MAX_ATTEMPTS_EXCEEDED"]
+          }
+        }
+      ],
+      "Default": {
+        "NextAction": "GetEnrollmentOTP"
+      }
+    },
+    {
+      "Identifier": "EnrollmentError",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "Text": "I'm sorry, we encountered an issue creating your account. Please hold while I connect you with an agent who can assist you."
+      },
+      "Transitions": {
+        "NextAction": "TransferToAgent",
+        "Errors": [
+          { "NextAction": "TransferToAgent", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "TransferToAgent",
+      "Type": "TransferToQueue",
+      "Parameters": {
+        "QueueId": "${DefaultQueueId}",
+        "Attributes": {
+          "transferReason": "ENROLLMENT_ASSISTANCE",
+          "enrollFirstName": "$.Attributes.enrollFirstName",
+          "enrollLastName": "$.Attributes.enrollLastName"
+        }
+      },
+      "Transitions": {
+        "Errors": [
+          { "NextAction": "Disconnect", "ErrorType": "NoMatchingError" }
+        ]
+      }
+    },
+    {
+      "Identifier": "Disconnect",
+      "Type": "DisconnectParticipant",
+      "Parameters": {}
+    }
+  ]
+}
