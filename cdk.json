@@ -1,5 +1,5 @@
 {
-  "app": "npx ts-node --prefer-ts-exts infrastructure/bin/medcx-app.ts",
+  "app": "npx ts-node --prefer-ts-exts --project tsconfig.json infrastructure/bin/medcx-app.ts",
   "watch": {
     "include": [
       "**"
