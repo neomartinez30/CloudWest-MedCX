@@ -3,7 +3,7 @@ import { PinpointClient, SendMessagesCommand, PhoneNumberValidateCommand } from 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const lambdaClient = new LambdaClient({});
 const pinpointClient = new PinpointClient({});
@@ -171,7 +171,7 @@ async function processInboundSMS(message: InboundSMS): Promise<any> {
  */
 async function sendSMS(data: SMSMessage): Promise<any> {
   const { phoneNumber, message, messageType = 'TRANSACTIONAL', patientId, metadata } = data;
-  const messageId = uuidv4();
+  const messageId = randomUUID();
 
   // Validate phone number format
   const normalizedPhone = normalizePhoneNumber(phoneNumber);

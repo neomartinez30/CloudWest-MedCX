@@ -3,7 +3,7 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const bedrockClient = new BedrockRuntimeClient({});
 const lambdaClient = new LambdaClient({});
@@ -79,7 +79,7 @@ export const handler = async (event: any): Promise<any> => {
  */
 async function handleConversation(request: ConversationRequest): Promise<any> {
   const { patientId, message, channel, conversationHistory = [], intent } = request;
-  const conversationId = uuidv4();
+  const conversationId = randomUUID();
 
   // Build patient context
   const patientContext = await invokeFunction(CONTEXT_BUILDER_ARN, {

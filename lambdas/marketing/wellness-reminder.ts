@@ -2,7 +2,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, ScanCommand, QueryCommand, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -255,7 +255,7 @@ async function sendReminder(data: {
   dueDate?: string;
 }): Promise<any> {
   const { patientId, reminderType, dueDate } = data;
-  const reminderId = uuidv4();
+  const reminderId = randomUUID();
   const now = new Date().toISOString();
 
   const patient = await getPatient(patientId);
@@ -386,7 +386,7 @@ async function createCustomReminder(data: {
   dueDate: string;
   frequency?: number;
 }): Promise<any> {
-  const reminderId = uuidv4();
+  const reminderId = randomUUID();
   const now = new Date().toISOString();
 
   const reminder: WellnessReminder = {

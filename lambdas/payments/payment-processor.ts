@@ -3,7 +3,7 @@ import { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, QueryCom
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import Stripe from 'stripe';
 
 const dynamoClient = new DynamoDBClient({});
@@ -99,7 +99,7 @@ export const handler = async (event: any): Promise<any> => {
  */
 async function createPaymentIntent(request: PaymentRequest): Promise<any> {
   const { patientId, amount, paymentType, description, appointmentId, metadata } = request;
-  const paymentId = uuidv4();
+  const paymentId = randomUUID();
   const now = new Date().toISOString();
 
   // Get or create Stripe customer

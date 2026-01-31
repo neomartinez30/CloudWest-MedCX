@@ -4,7 +4,7 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { RekognitionClient, CompareFacesCommand, DetectTextCommand } from '@aws-sdk/client-rekognition';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -96,7 +96,7 @@ async function verifyId(data: {
   s3Key?: string;
 }): Promise<any> {
   const { patientId, idData, s3Key } = data;
-  const verificationId = uuidv4();
+  const verificationId = randomUUID();
   const now = new Date().toISOString();
 
   // Create verification record

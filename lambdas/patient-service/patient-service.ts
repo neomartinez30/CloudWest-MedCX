@@ -13,7 +13,7 @@ import {
 } from '@aws-sdk/client-eventbridge';
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -181,7 +181,7 @@ async function handleEventBridgeEvent(event: any): Promise<any> {
  * Create a new patient
  */
 async function createPatient(data: Partial<PatientProfile>): Promise<any> {
-  const patientId = data.patientId || uuidv4();
+  const patientId = data.patientId || randomUUID();
   const now = new Date().toISOString();
 
   const patient: PatientProfile = {
@@ -522,7 +522,7 @@ async function getPatientDocuments(patientId: string): Promise<any[]> {
  * Create welcome interaction for new patient
  */
 async function createWelcomeInteraction(patientId: string): Promise<void> {
-  const interactionId = uuidv4();
+  const interactionId = randomUUID();
   const now = new Date().toISOString();
 
   await docClient.send(new PutCommand({

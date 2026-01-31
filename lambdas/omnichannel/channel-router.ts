@@ -4,7 +4,7 @@ import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from '@a
 import { PinpointClient, SendMessagesCommand } from '@aws-sdk/client-pinpoint';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const lambdaClient = new LambdaClient({});
 const dynamoClient = new DynamoDBClient({});
@@ -502,7 +502,7 @@ async function recordInteraction(patientId: string, data: any): Promise<void> {
     Item: {
       patientId,
       interactionTimestamp: new Date().toISOString(),
-      interactionId: uuidv4(),
+      interactionId: randomUUID(),
       ...data,
     },
   }));

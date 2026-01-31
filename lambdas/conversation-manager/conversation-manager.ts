@@ -10,7 +10,7 @@ import {
   EventBridgeClient,
   PutEventsCommand,
 } from '@aws-sdk/client-eventbridge';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -203,7 +203,7 @@ async function createConversation(data: {
     return formatResponse(404, { error: 'Patient not found' });
   }
 
-  const threadId = uuidv4();
+  const threadId = randomUUID();
   const now = new Date().toISOString();
 
   const thread: ConversationThread = {
@@ -478,7 +478,7 @@ async function addMessageToThread(
     agentId?: string;
   }
 ): Promise<Message> {
-  const messageId = uuidv4();
+  const messageId = randomUUID();
   const now = new Date().toISOString();
 
   const message: Message = {
@@ -747,7 +747,7 @@ async function recordInteraction(patientId: string, threadId: string, message: M
     Item: {
       patientId,
       interactionTimestamp: now,
-      interactionId: uuidv4(),
+      interactionId: randomUUID(),
       interactionType: 'MESSAGE',
       subType: message.direction,
       channel: message.channel,

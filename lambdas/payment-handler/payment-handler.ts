@@ -3,7 +3,7 @@ import { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, QueryCom
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import Stripe from 'stripe';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -159,7 +159,7 @@ async function createPaymentIntent(request: PaymentRequest): Promise<any> {
   }
 
   const stripe = await getStripe();
-  const paymentId = uuidv4();
+  const paymentId = randomUUID();
   const now = new Date().toISOString();
 
   // Get patient info
@@ -228,7 +228,7 @@ async function createPaymentLink(request: PaymentRequest): Promise<any> {
   }
 
   const stripe = await getStripe();
-  const paymentId = uuidv4();
+  const paymentId = randomUUID();
   const now = new Date().toISOString();
 
   // Get patient info

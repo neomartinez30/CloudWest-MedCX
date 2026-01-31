@@ -14,7 +14,7 @@ import {
 } from '@aws-sdk/client-ses';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -359,7 +359,7 @@ async function recordOutreach(patientId: string, campaign: string, step: string)
     Item: {
       patientId,
       interactionTimestamp: new Date().toISOString(),
-      interactionId: uuidv4(),
+      interactionId: randomUUID(),
       interactionType: 'outreach',
       campaign,
       step,
@@ -398,7 +398,7 @@ async function createCampaign(config: CampaignConfig): Promise<any> {
     });
   }
 
-  const campaignId = uuidv4();
+  const campaignId = randomUUID();
   const now = new Date().toISOString();
 
   const campaign: Campaign = {

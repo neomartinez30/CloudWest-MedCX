@@ -3,7 +3,7 @@ import { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, QueryCom
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -99,7 +99,7 @@ async function verifyInsurance(data: {
   insuranceData: InsuranceData;
 }): Promise<any> {
   const { patientId, insuranceData } = data;
-  const verificationId = uuidv4();
+  const verificationId = randomUUID();
   const now = new Date().toISOString();
 
   // Validate required fields

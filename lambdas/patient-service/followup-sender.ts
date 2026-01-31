@@ -10,7 +10,7 @@ import {
   EventBridgeClient,
   PutEventsCommand,
 } from '@aws-sdk/client-eventbridge';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -277,7 +277,7 @@ async function createConversationMessage(
   channel: string,
   followupType: FollowupType
 ): Promise<string> {
-  const messageId = uuidv4();
+  const messageId = randomUUID();
   const threadId = `followup-${patientId}-${Date.now()}`;
   const now = new Date().toISOString();
 
@@ -349,7 +349,7 @@ async function recordInteraction(
     Item: {
       patientId,
       interactionTimestamp: now,
-      interactionId: uuidv4(),
+      interactionId: randomUUID(),
       interactionType: 'OUTREACH',
       subType: followupType,
       messageId,

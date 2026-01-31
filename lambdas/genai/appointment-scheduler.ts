@@ -3,7 +3,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const lambdaClient = new LambdaClient({});
 const dynamoClient = new DynamoDBClient({});
@@ -175,7 +175,7 @@ async function scheduleAppointment(request: AppointmentRequest & {
   slotTime: string;
   slotDate: string;
 }): Promise<any> {
-  const appointmentId = uuidv4();
+  const appointmentId = randomUUID();
   const now = new Date().toISOString();
 
   // Get patient info

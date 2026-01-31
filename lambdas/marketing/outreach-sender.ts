@@ -3,7 +3,7 @@ import { DynamoDBDocumentClient, GetCommand, UpdateCommand, PutCommand, QueryCom
 import { SQSClient, SendMessageBatchCommand } from '@aws-sdk/client-sqs';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -182,7 +182,7 @@ async function sendBulkOutreach(data: {
  */
 async function sendSingleOutreach(data: OutreachMessage): Promise<any> {
   const { patientId, channel, content, campaignId, metadata } = data;
-  const outreachId = uuidv4();
+  const outreachId = randomUUID();
   const now = new Date().toISOString();
 
   // Check opt-out status

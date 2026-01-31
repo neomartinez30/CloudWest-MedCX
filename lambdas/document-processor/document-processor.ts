@@ -4,7 +4,7 @@ import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { TextractClient, AnalyzeDocumentCommand, FeatureType } from '@aws-sdk/client-textract';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -156,7 +156,7 @@ async function generateUploadUrl(request: DocumentEvent): Promise<any> {
   }
 
   const fileExtension = fileName?.split('.').pop() || 'jpg';
-  const s3Key = `documents/${patientId}/${documentType}/${uuidv4()}.${fileExtension}`;
+  const s3Key = `documents/${patientId}/${documentType}/${randomUUID()}.${fileExtension}`;
 
   const command = new PutObjectCommand({
     Bucket: DOCUMENTS_BUCKET,
@@ -190,7 +190,7 @@ async function processDocument(request: DocumentEvent): Promise<any> {
   }
 
   const now = new Date().toISOString();
-  const documentId = uuidv4();
+  const documentId = randomUUID();
 
   // Call Textract to analyze the document
   const textractResult = await analyzeDocument(s3Key);

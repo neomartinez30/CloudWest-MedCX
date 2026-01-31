@@ -4,7 +4,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const textractClient = new TextractClient({});
 const s3Client = new S3Client({});
@@ -123,7 +123,7 @@ async function handleS3Event(event: any): Promise<any> {
  */
 async function processDocument(request: DocumentProcessingRequest): Promise<any> {
   const { patientId, documentType, s3Key, metadata } = request;
-  const documentId = uuidv4();
+  const documentId = randomUUID();
   const now = new Date().toISOString();
 
   // Create document record

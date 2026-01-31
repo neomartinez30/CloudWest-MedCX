@@ -2,7 +2,7 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, QueryCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { PinpointClient, SendMessagesCommand } from '@aws-sdk/client-pinpoint';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const lambdaClient = new LambdaClient({});
 const dynamoClient = new DynamoDBClient({});
@@ -531,7 +531,7 @@ async function recordConversation(
     Item: {
       patientId,
       messageTimestamp: new Date().toISOString(),
-      messageId: uuidv4(),
+      messageId: randomUUID(),
       direction,
       content,
       messageType,

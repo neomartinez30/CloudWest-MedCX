@@ -2,7 +2,7 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const lambdaClient = new LambdaClient({});
 const dynamoClient = new DynamoDBClient({});
@@ -119,7 +119,7 @@ async function sendTimePicker(data: {
   appointmentType?: string;
   providerId?: string;
 }): Promise<any> {
-  const messageId = uuidv4();
+  const messageId = randomUUID();
 
   // Store message for tracking
   await storeInteractiveMessage({
@@ -167,7 +167,7 @@ async function sendListPicker(data: {
   selectionType?: 'single' | 'multiple';
   context?: any;
 }): Promise<any> {
-  const messageId = uuidv4();
+  const messageId = randomUUID();
 
   await storeInteractiveMessage({
     messageId,
@@ -204,7 +204,7 @@ async function sendRichLink(data: {
   imageUrl?: string;
   context?: any;
 }): Promise<any> {
-  const messageId = uuidv4();
+  const messageId = randomUUID();
 
   await storeInteractiveMessage({
     messageId,
@@ -240,7 +240,7 @@ async function sendQuickReplies(data: {
   replies: Array<{ id: string; title: string }>;
   context?: any;
 }): Promise<any> {
-  const messageId = uuidv4();
+  const messageId = randomUUID();
 
   await storeInteractiveMessage({
     messageId,

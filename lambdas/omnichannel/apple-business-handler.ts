@@ -3,7 +3,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import * as crypto from 'crypto';
 
 const lambdaClient = new LambdaClient({});
@@ -274,7 +274,7 @@ async function sendMessage(data: {
   body: string;
   patientId?: string;
 }): Promise<any> {
-  const messageId = uuidv4();
+  const messageId = randomUUID();
 
   const payload = {
     id: messageId,
@@ -310,7 +310,7 @@ async function sendTimePicker(data: {
   slots: Array<{ startTime: string; duration: number }>;
   patientId?: string;
 }): Promise<any> {
-  const messageId = uuidv4();
+  const messageId = randomUUID();
 
   const payload = {
     id: messageId,
@@ -366,7 +366,7 @@ async function sendListPicker(data: {
   }>;
   patientId?: string;
 }): Promise<any> {
-  const messageId = uuidv4();
+  const messageId = randomUUID();
 
   const payload = {
     id: messageId,
@@ -423,7 +423,7 @@ async function sendRichLink(data: {
   imageUrl?: string;
   patientId?: string;
 }): Promise<any> {
-  const messageId = uuidv4();
+  const messageId = randomUUID();
 
   const payload = {
     id: messageId,
@@ -465,7 +465,7 @@ async function sendQuickReplies(data: {
   replies: Array<{ id: string; title: string }>;
   patientId?: string;
 }): Promise<any> {
-  const messageId = uuidv4();
+  const messageId = randomUUID();
 
   const payload = {
     id: messageId,

@@ -3,7 +3,7 @@ import { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, QueryCom
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { SchedulerClient, CreateScheduleCommand, DeleteScheduleCommand } from '@aws-sdk/client-scheduler';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -112,7 +112,7 @@ export const handler = async (event: any): Promise<any> => {
  * Create a new campaign
  */
 async function createCampaign(data: Partial<Campaign>): Promise<any> {
-  const campaignId = uuidv4();
+  const campaignId = randomUUID();
   const now = new Date().toISOString();
 
   const campaign: Campaign = {

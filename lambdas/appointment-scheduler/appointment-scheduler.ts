@@ -3,7 +3,7 @@ import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCom
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { google, calendar_v3 } from 'googleapis';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -225,7 +225,7 @@ async function bookAppointment(request: AppointmentRequest): Promise<any> {
     return { error: 'Patient not found' };
   }
 
-  const appointmentId = uuidv4();
+  const appointmentId = randomUUID();
   const appointmentDateTime = new Date(`${preferredDate}T${preferredTime}`);
   const appointmentEndTime = new Date(appointmentDateTime);
   appointmentEndTime.setMinutes(appointmentEndTime.getMinutes() + duration);

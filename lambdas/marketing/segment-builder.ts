@@ -1,7 +1,7 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -100,7 +100,7 @@ export const handler = async (event: any): Promise<any> => {
  * Create a new segment
  */
 async function createSegment(data: Partial<Segment>): Promise<any> {
-  const segmentId = uuidv4();
+  const segmentId = randomUUID();
   const now = new Date().toISOString();
 
   const segment: Segment = {

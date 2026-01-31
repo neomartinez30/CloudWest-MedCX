@@ -9,7 +9,7 @@ import {
   EventBridgeClient,
   PutEventsCommand,
 } from '@aws-sdk/client-eventbridge';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -327,7 +327,7 @@ async function createPatient(data: {
   lastName?: string;
   dateOfBirth?: string;
 }): Promise<PatientIdentity> {
-  const patientId = uuidv4();
+  const patientId = randomUUID();
   const now = new Date().toISOString();
 
   const patient: PatientIdentity & { recordType: string } = {
