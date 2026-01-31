@@ -113,6 +113,7 @@ export class Phase3OmnichannelStack extends cdk.Stack {
     patient360Stack.conversationManagerFunction.grantInvoke(this.channelRouterFunction);
     this.inboundMessageQueue.grantConsumeMessages(this.channelRouterFunction);
     this.outboundMessageQueue.grantSendMessages(this.channelRouterFunction);
+    this.outboundMessageQueue.grantConsumeMessages(this.channelRouterFunction);
 
     // ========================================================================
     // SMS Handler Lambda (Amazon Pinpoint)
